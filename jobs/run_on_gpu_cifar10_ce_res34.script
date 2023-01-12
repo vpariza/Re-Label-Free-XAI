@@ -1,0 +1,48 @@
+#!/bin/bash
+#SBATCH -J CIFAR10-CE
+## SBATCH -n 1
+#SBATCH -N 1                    # Ensure that all cores are on one machine
+#SBATCH -t 5-00:05              # Runtime in D-HH:MM
+#SBATCH --nodelist=gpu
+#SBATCH --partition GPU
+#SBATCH --mem=30000
+
+
+srun -l /bin/hostname
+
+###### Step 1: Load all necessary modules ######
+module use /share/apps/eb/modules/all
+module load CUDA/11.1.1-GCC-10.2.0
+# module load CUDA
+module load cuDNN/8.0.5.39-CUDA-11.1.1
+
+###### Step 2: Make sure to deactivate any conda environments ######
+# conda deactivate
+
+###### Step 2: Create a virtual environment with name env ######
+python -m venv env
+
+###### Step 3: Activate the virtual environment ######
+source ~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/activate
+
+###### Step 4: Install the required libraries package libraries ######
+~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/pip install .
+
+###### Step 5: Activate cuda11.1 ######
+source cuda11.1
+
+###### Step 6: Verify version of CUDA drivers used ######
+nvcc -V
+
+###### Step 7: To avoid conflicts, make sure, right torch libraries are used ######
+~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+
+###### Step 8: Move to the experiments folder ######
+cd ~/workspace/FACT-AI-2023/Label-Free-XAI/experiments
+
+###### Step 9: Make sure to specify a GPU device to avoid running on a device used by another process ######
+###### Step 9: Make sure to specify a GPU device to avoid running on a device used by another process ######
+export CUDA_VISIBLE_DEVICES=1
+
+# CIFAR10 experiments
+~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/python -m cifar10 --config-name 'simclr_config_ce_resnet34.yaml' 
