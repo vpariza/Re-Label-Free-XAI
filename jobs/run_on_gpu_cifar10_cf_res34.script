@@ -9,12 +9,14 @@
 
 srun -l /bin/hostname
 
+###### Step 0: Define the code directory ######
+code_dir=. # e.g. ~/workspace/FACT-AI-2023/Label-Free-XAI
+
 ###### Step 1: Load all necessary modules ######
 module use /share/apps/eb/modules/all
 module load CUDA/11.1.1-GCC-10.2.0
 # module load CUDA
 module load cuDNN/8.0.5.39-CUDA-11.1.1
-
 
 ###### Step 2: Make sure to deactivate any conda environments ######
 # conda deactivate
@@ -23,10 +25,10 @@ module load cuDNN/8.0.5.39-CUDA-11.1.1
 python -m venv env
 
 ###### Step 3: Activate the virtual environment ######
-source ~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/activate
+source $code_dir/env/bin/activate
 
 ###### Step 4: Install the required libraries package libraries ######
-~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/pip install .
+$code_dir/env/bin/pip install .
 
 ###### Step 5: Activate cuda11.1 ######
 source cuda11.1
@@ -35,10 +37,10 @@ source cuda11.1
 nvcc -V
 
 ###### Step 7: To avoid conflicts, make sure, right torch libraries are used ######
-~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+$code_dir/env/bin/pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
 
 ###### Step 8: Move to the experiments folder ######
-cd ~/workspace/FACT-AI-2023/Label-Free-XAI/experiments
+cd $code_dir/experiments
 
 # CIFAR10 experiments
-~/workspace/FACT-AI-2023/Label-Free-XAI/env/bin/python -m cifar10 --config-name 'simclr_config_cf_resnet34.yaml' 
+$code_dir/env/bin/python -m cifar10 --config-name 'simclr_config_cf_resnet34.yaml' 
