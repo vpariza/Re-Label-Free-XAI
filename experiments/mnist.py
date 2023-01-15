@@ -6,6 +6,7 @@ import sys
 import os
 # Add the lfxai package to the path
 sys.path.append(os.path.abspath('../'))
+sys.path.append(os.path.abspath('../src/'))
 sys.path.append(os.path.abspath('../src/lfxai/'))
 sys.path.append(os.path.abspath('../src/lfxai/explanations'))
 sys.path.append(os.path.abspath('../src/lfxai/models'))

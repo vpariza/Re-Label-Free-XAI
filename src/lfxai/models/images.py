@@ -1204,3 +1204,219 @@ def log_density_gaussian(x: torch.Tensor, mu: torch.Tensor, logvar: torch.Tensor
     norm = -0.5 * (math.log(2 * math.pi) + logvar)
     log_density = norm - 0.5 * ((x - mu) ** 2 * torch.exp(-logvar))
     return log_density
+
+
+## EXTENSIONS
+
+class EncoderTinyImageNet(nn.Module):
+    def __init__(self, encoded_space_dim):
+        super().__init__()
+        self.encoder_cnn = nn.Sequential(
+            nn.Conv2d(3, 8, 3, stride=2, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(8, 16, 3, stride=2, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(True),
+            nn.Conv2d(16, 32, 3, stride=2, padding=0),
+            nn.ReLU(True),
+        )
+        self.flatten = nn.Flatten(start_dim=1)
+        self.encoder_lin = nn.Sequential(
+            nn.Linear(7 * 7 * 32, 128), nn.ReLU(True), nn.Linear(128, encoded_space_dim)
+        )
+        self.encoded_space_dim = encoded_space_dim
+
+    def forward(self, x):
+        x = self.encoder_cnn(x)
+        x = self.flatten(x)
+        x = self.encoder_lin(x)
+        return x
+
+
+class DecoderTinyImageNet(nn.Module):
+    def __init__(self, encoded_space_dim):
+        super().__init__()
+        self.decoder_lin = nn.Sequential(
+            nn.Linear(encoded_space_dim, 128),
+            nn.ReLU(True),
+            nn.Linear(128, 7 * 7 * 32),
+            nn.ReLU(True),
+        )
+        self.unflatten = nn.Unflatten(dim=1, unflattened_size=(32, 7, 7))
+        self.decoder_conv = nn.Sequential(
+            nn.ConvTranspose2d(32, 16, 3, stride=2, output_padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(16, 8, 3, stride=2, padding=1, output_padding=1),
+            nn.BatchNorm2d(8),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(8, 3, 3, stride=2, padding=1, output_padding=1),
+        )
+
+    def forward(self, x):
+        x = self.decoder_lin(x)
+        x = self.unflatten(x)
+        x = self.decoder_conv(x)
+        x = torch.sigmoid(x)
+        return x
+
+
+class AutoEncoderTinyImageNet(nn.Module):
+    def __init__(
+        self,
+        encoder: EncoderTinyImageNet,
+        decoder: DecoderTinyImageNet,
+        latent_dim: int,
+        input_pert: callable,
+        name: str = "model",
+        loss_f: callable = nn.MSELoss(),
+    ):
+        """Class which defines model and forward pass.
+
+        Parameters:
+        ----------
+        img_size : tuple of ints
+            Size of images. E.g. (1, 32, 32) or (3, 64, 64).
+        """
+        super(AutoEncoderTinyImageNet, self).__init__()
+        self.latent_dim = latent_dim
+        self.encoder = encoder
+        self.decoder = decoder
+        self.input_pert = input_pert
+        self.name = name
+        self.loss_f = loss_f
+        self.checkpoints_files = []
+        self.lr = None
+
+    def forward(self, x):
+        """Forward pass of model.
+
+        Parameters:
+        -----------
+        x : torch.Tensor
+            Batch of data. Shape (batch_size, n_chan, height, width)
+        """
+        if self.training:
+            x = self.input_pert(x)
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def train_epoch(
+        self,
+        device: torch.device,
+        dataloader: torch.utils.data.DataLoader,
+        optimizer: torch.optim.Optimizer,
+    ) -> np.ndarray:
+        self.train()
+        train_loss = []
+        for image_batch, _ in tqdm(dataloader, unit="batch", leave=False):
+            image_batch = image_batch.to(device)
+            recon_batch = self.forward(image_batch)
+            loss = self.loss_f(image_batch, recon_batch)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            train_loss.append(loss.detach().cpu().numpy())
+        return np.mean(train_loss)
+
+    def test_epoch(self, device: torch.device, dataloader: torch.utils.data.DataLoader):
+        self.eval()
+        test_loss = []
+        with torch.no_grad():
+            for image_batch, _ in dataloader:
+                image_batch = image_batch.to(device)
+                pert_batch = self.input_pert(image_batch)
+                recon_batch = self.forward(pert_batch)
+                loss = self.loss_f(image_batch, recon_batch)
+                test_loss.append(loss.cpu().numpy())
+        return np.mean(test_loss)
+
+    def fit(
+        self,
+        device: torch.device,
+        train_loader: torch.utils.data.DataLoader,
+        test_loader: torch.utils.data.DataLoader,
+        save_dir: pathlib.Path,
+        n_epoch: int = 30,
+        patience: int = 10,
+        checkpoint_interval: int = -1,
+    ) -> None:
+        self.to(device)
+        self.lr = 1e-03
+        optim = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-05)
+        waiting_epoch = 0
+        best_test_loss = float("inf")
+        for epoch in range(n_epoch):
+            train_loss = self.train_epoch(device, train_loader, optim)
+            test_loss = self.test_epoch(device, test_loader)
+            logging.info(
+                f"Epoch {epoch + 1}/{n_epoch} \t "
+                f"Train loss {train_loss:.3g} \t Test loss {test_loss:.3g} \t "
+            )
+            if test_loss >= best_test_loss:
+                waiting_epoch += 1
+                logging.info(
+                    f"No improvement over the best epoch \t Patience {waiting_epoch} / {patience}"
+                )
+            else:
+                logging.info(f"Saving the model in {save_dir}")
+                self.cpu()
+                self.save(save_dir)
+                self.to(device)
+                best_test_loss = test_loss.data
+                waiting_epoch = 0
+            if checkpoint_interval > 0 and epoch % checkpoint_interval == 0:
+                n_checkpoint = 1 + epoch // checkpoint_interval
+                logging.info(f"Saving checkpoint {n_checkpoint} in {save_dir}")
+                path_to_checkpoint = (
+                    save_dir / f"{self.name}_checkpoint{n_checkpoint}.pt"
+                )
+                torch.save(self.state_dict(), path_to_checkpoint)
+                self.checkpoints_files.append(path_to_checkpoint)
+            if waiting_epoch == patience:
+                logging.info("Early stopping activated")
+                break
+
+    def save(self, directory: pathlib.Path) -> None:
+        """Save a model and corresponding metadata.
+
+        Parameters:
+        -----------
+        directory : pathlib.Path
+            Path to the directory where to save the data.
+        """
+        model_name = self.name
+        self.save_metadata(directory)
+        path_to_model = directory / (model_name + ".pt")
+        torch.save(self.state_dict(), path_to_model)
+
+
+    def load_metadata(self, directory: pathlib.Path) -> dict:
+        """Load the metadata of a training directory.
+
+        Parameters:
+        -----------
+        directory : pathlib.Path
+            Path to folder where model is saved. For example './experiments/imagenet'.
+        """
+        path_to_metadata = directory / (self.name + ".json")
+
+        with open(path_to_metadata) as metadata_file:
+            metadata = json.load(metadata_file)
+        return metadata
+
+    def save_metadata(self, directory: pathlib.Path, **kwargs) -> None:
+        """Load the metadata of a training directory.
+
+        Parameters:
+        -----------
+        directory: string
+            Path to folder where to save model. For example './experiments/imagenet'.
+        kwargs:
+            Additional arguments to `json.dump`
+        """
+        path_to_metadata = directory / (self.name + ".json")
+        metadata = {"latent_dim": self.latent_dim, "name": self.name}
+        with open(path_to_metadata, "w") as f:
+            json.dump(metadata, f, indent=4, sort_keys=True, **kwargs)
