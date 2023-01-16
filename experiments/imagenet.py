@@ -26,6 +26,7 @@ from captum.attr import GradientShap, IntegratedGradients, Saliency
 from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
+from torchvision.transforms import GaussianBlur, ToTensor
 from vision_tinyimagenet import TinyImageNet
 
 from lfxai.explanations.examples import (
@@ -66,9 +67,100 @@ from lfxai.utils.visualize import (
 )
 
 
-def consistency_feature_importance():
-    #TODO: implement the same experiment for imagenet dataset
-    pass
+def consistency_feature_importance(
+     random_seed: int = 1,
+    batch_size: int = 1000,
+    dim_latent: int = 4,
+    n_epochs: int = 100,
+) -> None:
+    # Initialize seed and device
+    torch.random.manual_seed(random_seed)
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    W = 64  # Image width = height
+    pert_percentages = [5, 10, 20, 50, 80, 100]
+    perturbation = GaussianBlur(21, sigma=5).to(device)
+    # Load MNIST
+    data_dir = Path.cwd() / "data/tinyimagenet"
+    train_dataset = TinyImageNet(data_dir, train=True, download=True)
+    test_dataset = TinyImageNet(data_dir, train=False, download=True)
+    train_transform = transforms.Compose([transforms.ToTensor()])
+    test_transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset.transform = train_transform
+    test_dataset.transform = test_transform
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False
+    )
+
+       # Initialize encoder, decoder and autoencoder wrapper
+    pert = RandomNoise()
+    encoder = EncoderTinyImageNet(encoded_space_dim=dim_latent)
+    decoder = DecoderTinyImageNet(encoded_space_dim=dim_latent)
+    autoencoder = AutoEncoderTinyImageNet(encoder, decoder, dim_latent, pert)
+    encoder.to(device)
+    decoder.to(device)
+
+       # Train the denoising autoencoder
+    save_dir = Path.cwd() / "results/imagenet/consistency_features"
+    if not save_dir.exists():
+        os.makedirs(save_dir)
+    # autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
+    autoencoder.load_state_dict(
+        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
+    )
+   
+    attr_methods = {
+        "Gradient Shap": GradientShap,
+        "Integrated Gradients": IntegratedGradients,
+        "Saliency": Saliency,
+        "Random": None,
+    }
+    results_data = []
+
+    for method_name in attr_methods:
+        logging.info(f"Computing feature importance with {method_name}")
+        results_data.append([method_name, 0, 0])
+        attr_method = attr_methods[method_name]
+        if attr_method is not None:
+            attr = attribute_auxiliary(
+                encoder, test_loader, device, attr_method(encoder), perturbation
+            )
+        else:
+            np.random.seed(random_seed)
+            attr = np.random.randn(len(test_dataset), 1, W, W)
+
+        for pert_percentage in pert_percentages:
+            logging.info(
+                f"Perturbing {pert_percentage}% of the features with {method_name}"
+            )
+            mask_size = int(pert_percentage * W**2 / 100)
+            masks = generate_masks(attr, mask_size)
+            for batch_id, (images, _) in enumerate(test_loader):
+                mask = masks[
+                    batch_id * batch_size : batch_id * batch_size + len(images)
+                ].to(device)
+                images = images.to(device)
+                original_reps = encoder(images)
+                images = mask*images + (1-mask)*perturbation(images)
+                pert_reps = encoder(images)
+                rep_shift = torch.mean(
+                    torch.sum((original_reps - pert_reps) ** 2, dim=-1)
+                ).item()
+                results_data.append([method_name, pert_percentage, rep_shift])
+
+    logging.info("Saving the plot")
+    results_df = pd.DataFrame(
+        results_data, columns=["Method", "% Perturbed Pixels", "Representation Shift"]
+    )
+    sns.set(font_scale=1.3)
+    sns.set_style("white")
+    sns.set_palette("colorblind")
+    sns.lineplot(
+        data=results_df, x="% Perturbed Pixels", y="Representation Shift", hue="Method"
+    )
+    plt.tight_layout()
+    plt.savefig(save_dir / "imagenet_consistency_features.pdf")
+    plt.close() 
 
 
 def consistency_examples(
