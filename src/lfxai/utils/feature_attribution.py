@@ -4,13 +4,14 @@ import numpy as np
 import torch
 
 
-def generate_masks(attr: np.ndarray, mask_size: int) -> torch.Tensor:
+def generate_masks(attr: np.ndarray, mask_size: int, is_normalised: bool = False) -> torch.Tensor:
     """
     Generates mask for images with feature importance scores
     Args:
         attr: feature importance scores
         mask_size: number of pixels masked
-
+        # Extension idea
+        is_normalised: boolean flag to set importance of pixel i with (1 - f_i)/max(f)
     Returns:
         Mask hiding most important pixels
 
@@ -23,9 +24,21 @@ def generate_masks(attr: np.ndarray, mask_size: int) -> torch.Tensor:
     masks = masks.view(
         dataset_size, -1
     )  # Reshape to make it compatible with torch.topk
-    top_pixels = torch.topk(attr.view(dataset_size, -1), mask_size)[1]
-    for feature_id, example_id in product(range(mask_size), range(dataset_size)):
-        masks[example_id, top_pixels[example_id, feature_id]] = 0
+
+    # torch.topk[0] -> returns top values, torch.topk[1] -> returns indices of top values
+    # top_pixels = torch.topk(attr.view(dataset_size, -1), mask_size)[1]
+
+    top_attrs = torch.topk(attr.view(dataset_size, -1), mask_size)
+    top_pixel_values, top_pixels = top_attrs
+    if not is_normalised:
+        for feature_id, example_id in product(range(mask_size), range(dataset_size)):
+            masks[example_id, top_pixels[example_id, feature_id]] = 0
+    else:
+        for example_id in range(dataset_size):
+            max_feat = max(top_pixel_values[example_id])
+            for feature_id in range(mask_size):
+                feat = top_pixel_values[example_id, feature_id]
+                masks[example_id, top_pixels[example_id, feature_id]] = (1-feat)/max_feat
     masks = masks.view(dataset_size, 1, H, W)
     return masks
 
