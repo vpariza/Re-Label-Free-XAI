@@ -121,6 +121,7 @@ def consistency_feature_importance(
     baseline_features = torch.zeros((1, 1, W, W)).to(
         device
     )  # Baseline image for attributions
+    is_baseline_normalised = False  # Extension
     for method_name in attr_methods:
         logging.info(f"Computing feature importance with {method_name}")
         results_data.append([method_name, 0, 0])
@@ -138,14 +139,27 @@ def consistency_feature_importance(
                 f"Perturbing {pert_percentage}% of the features with {method_name}"
             )
             mask_size = int(pert_percentage * W**2 / 100)
-            masks = generate_masks(attr, mask_size)
+            masks = generate_masks(attr, mask_size, is_normalised=False) # Extension
             for batch_id, (images, _) in enumerate(test_loader):
                 mask = masks[
                     batch_id * batch_size : batch_id * batch_size + len(images)
                 ].to(device)
                 images = images.to(device)
                 original_reps = encoder(images)
-                images = mask * images
+                if not is_baseline_normalised:
+                   images = mask * images
+                else:
+                    is_add_noise = False # Extension (Adding noise to baseline image)
+                    N, C, H, W = images.size()
+                    flat_images = images.view(N, C*H*W)
+                    max_in_flat = torch.max(flat_images, dim=-1, keepdim=False)[0] 
+                    if not is_add_noise:
+                      baseline = (1-images)/max_in_flat[:,None,None,None]
+                    else:
+                        noise = torch.normal(0, 1, size=(N, C, H, W))
+                        baseline = noise*(1-images)/max_in_flat[:,None,None,None]  
+                    images = mask * images + (1-mask)*baseline
+               
                 pert_reps = encoder(images)
                 rep_shift = torch.mean(
                     torch.sum((original_reps - pert_reps) ** 2, dim=-1)
