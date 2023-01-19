@@ -168,16 +168,22 @@ def consistency_examples(
     batch_size: int = 200,
     dim_latent: int = 16,
     n_epochs: int = 100,
-    subtrain_size: int = 5000,
+    subtrain_size: int = 1000,
+    subset_class: int = None,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+    if subset_class is not None:
+        no_classes = subset_class
+    else:
+        no_classes = 200
+    
     # Load MNIST
     data_dir = Path.cwd() / "data/tinyimagenet"
-    train_dataset = TinyImageNet(data_dir, train=True, download=True)
-    test_dataset = TinyImageNet(data_dir, train=False, download=True)
+    train_dataset = TinyImageNet(data_dir, train=True, download=True, subset_class=subset_class)
+    test_dataset = TinyImageNet(data_dir, train=False, download=True, subset_class=subset_class)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -210,11 +216,11 @@ def consistency_examples(
     autoencoder.train().to(device)
 
     idx_subtrain = [
-        torch.nonzero(train_dataset.targets == (n % 200))[n // 200].item()
+        torch.nonzero(train_dataset.targets == (n % no_classes))[n // no_classes].item()
         for n in range(subtrain_size)
     ]
     idx_subtest = [
-        torch.nonzero(test_dataset.targets == (n % 200))[n // 200].item()
+        torch.nonzero(test_dataset.targets == (n % no_classes))[n // no_classes].item()
         for n in range(subtrain_size)
     ]
     train_subset = Subset(train_dataset, idx_subtrain)
@@ -299,6 +305,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_runs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=300)
     parser.add_argument("--random_seed", type=int, default=1)
+    parser.add_argument("--subset_class", type=int, default=20)
     args = parser.parse_args()
 
     if args.name == "consistency_features":
@@ -306,6 +313,6 @@ if __name__ == "__main__":
             batch_size=args.batch_size, random_seed=args.random_seed
         )
     elif args.name == "consistency_examples":
-        consistency_examples(batch_size=args.batch_size, random_seed=args.random_seed)
+        consistency_examples(batch_size=args.batch_size, random_seed=args.random_seed, subset_class=args.subset_class)
     else:
         raise ValueError("Invalid experiment name")

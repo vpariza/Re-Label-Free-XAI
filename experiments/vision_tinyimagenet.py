@@ -6,6 +6,7 @@ this implementation has been picked up from - https://github.com/towzeur/vision/
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple, Dict, List
 from tqdm import tqdm
+import random
 
 import numpy as np
 import torch
@@ -49,8 +50,6 @@ class TinyImageNet(VisionDataset):
 
     NUM_CLASSES = 200
     INPUT_SIZE = 64
-    TRAIN_SIZE = 100000
-    TEST_SIZE = 10000
 
 
     def __init__(
@@ -60,12 +59,16 @@ class TinyImageNet(VisionDataset):
             transform: Optional[Callable] = None,
             target_transform: Optional[Callable] = None,
             download: bool = False,
+            subset_class: int = None,
     ) -> None:
 
         super(TinyImageNet, self).__init__(root, transform=transform, target_transform=target_transform)
         self.train = train
         self.split = 'train' if train else 'test'
+        self.subset_class = subset_class
 
+        self.TRAIN_SIZE = 500*self.subset_class if self.subset_class is not None else 100000
+        self.TEST_SIZE = 50*self.subset_class if self.subset_class is not None else 10000
         self.base_dir = Path(root) / self.base_folder
         self.zip_file =  Path(root) / self.filename
         self.split_dir = self.base_dir / ('train' if train else 'val')
@@ -136,6 +139,9 @@ class TinyImageNet(VisionDataset):
         # _classes = [n02124075,...,n02504458]
         with (self.base_dir / 'wnids.txt').open() as file:
             self._classes = [x.strip() for x in file.readlines()]
+            if self.subset_class is not None:
+                rand_idx = random.sample(range(len(self._classes)), self.subset_class)
+                self._classes = [self._classes[i] for i in rand_idx]
 
         self.class_to_idx = {name:i for i, name in enumerate(self._classes)}
         self.idx_to_class = {i:name for i, name in enumerate(self._classes)}
@@ -200,10 +206,11 @@ class TinyImageNet(VisionDataset):
                     filename, cls, *bbox = line.rstrip().split('\t')
                     path = self.split_dir / 'images' / filename
 
-                bbox = map(int, bbox)
-                image = self._parse_image(path)
-                target = self.class_to_idx[cls]
-                samples.append((image, target, bbox))
+                if cls in self._classes:
+                    target = self.class_to_idx[cls]
+                    bbox = map(int, bbox)
+                    image = self._parse_image(path)
+                    samples.append((image, target, bbox))
 
         image, target, bboxes = zip(*samples)
         self.data = np.stack(image)
