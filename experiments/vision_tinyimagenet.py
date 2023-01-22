@@ -60,12 +60,14 @@ class TinyImageNet(VisionDataset):
             target_transform: Optional[Callable] = None,
             download: bool = False,
             subset_class: int = None,
+            class_list: list = None,
     ) -> None:
 
         super(TinyImageNet, self).__init__(root, transform=transform, target_transform=target_transform)
         self.train = train
         self.split = 'train' if train else 'test'
         self.subset_class = subset_class
+        self._classes = class_list
 
         self.TRAIN_SIZE = 500*self.subset_class if self.subset_class is not None else 100000
         self.TEST_SIZE = 50*self.subset_class if self.subset_class is not None else 10000
@@ -137,11 +139,13 @@ class TinyImageNet(VisionDataset):
 
     def _load_meta(self) -> None:
         # _classes = [n02124075,...,n02504458]
-        with (self.base_dir / 'wnids.txt').open() as file:
-            self._classes = [x.strip() for x in file.readlines()]
-            if self.subset_class is not None:
-                rand_idx = random.sample(range(len(self._classes)), self.subset_class)
-                self._classes = [self._classes[i] for i in rand_idx]
+
+        if self._classes == None:
+            with (self.base_dir / 'wnids.txt').open() as file:
+                self._classes = [x.strip() for x in file.readlines()]
+                if self.subset_class is not None:
+                    rand_idx = random.sample(range(len(self._classes)), self.subset_class)
+                    self._classes = [self._classes[i] for i in rand_idx]
 
         self.class_to_idx = {name:i for i, name in enumerate(self._classes)}
         self.idx_to_class = {i:name for i, name in enumerate(self._classes)}

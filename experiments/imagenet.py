@@ -81,8 +81,8 @@ def consistency_feature_importance(
     perturbation = GaussianBlur(21, sigma=5).to(device)
     # Load MNIST
     data_dir = Path.cwd() / "data/tinyimagenet"
-    train_dataset = TinyImageNet(data_dir, train=True, download=True)
-    test_dataset = TinyImageNet(data_dir, train=False, download=True)
+    train_dataset = TinyImageNet(data_dir, train=True, download=True, subset_class=subset_class)
+    test_dataset = TinyImageNet(data_dir, train=False, download=True, subset_class=subset_class, class_list=train_dataset._classes)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
@@ -183,7 +183,7 @@ def consistency_examples(
     # Load MNIST
     data_dir = Path.cwd() / "data/tinyimagenet"
     train_dataset = TinyImageNet(data_dir, train=True, download=True, subset_class=subset_class)
-    test_dataset = TinyImageNet(data_dir, train=False, download=True, subset_class=subset_class)
+    test_dataset = TinyImageNet(data_dir, train=False, download=True, subset_class=subset_class, class_list=train_dataset._classes)
     train_transform = transforms.Compose([transforms.ToTensor()])
     test_transform = transforms.Compose([transforms.ToTensor()])
     train_dataset.transform = train_transform
