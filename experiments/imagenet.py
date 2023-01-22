@@ -72,14 +72,22 @@ def consistency_feature_importance(
     batch_size: int = 1000,
     dim_latent: int = 4,
     n_epochs: int = 100,
+    subtrain_size: int = 1000,
+    subset_class: int = None,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    if subset_class is not None:
+        no_classes = subset_class
+    else:
+        no_classes = 200
+    logging.info(f"Running for {no_classes} classes.")
     W = 64  # Image width = height
     pert_percentages = [5, 10, 20, 50, 80, 100]
     perturbation = GaussianBlur(21, sigma=5).to(device)
-    # Load MNIST
+    # Load Imagenet
     data_dir = Path.cwd() / "data/tinyimagenet"
     train_dataset = TinyImageNet(data_dir, train=True, download=True, subset_class=subset_class)
     test_dataset = TinyImageNet(data_dir, train=False, download=True, subset_class=subset_class, class_list=train_dataset._classes)
@@ -101,10 +109,11 @@ def consistency_feature_importance(
     decoder.to(device)
 
        # Train the denoising autoencoder
-    save_dir = Path.cwd() / "results/imagenet/consistency_features"
+    path =  "results/imagenet/consistency_features"+str(subset_class)+"_classes"
+    save_dir = Path.cwd() / path
     if not save_dir.exists():
         os.makedirs(save_dir)
-    # autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
+    autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
     autoencoder.load_state_dict(
         torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
     )
@@ -310,8 +319,7 @@ if __name__ == "__main__":
 
     if args.name == "consistency_features":
         consistency_feature_importance(
-            batch_size=args.batch_size, random_seed=args.random_seed
-        )
+            batch_size=args.batch_size, random_seed=args.random_seed, subset_class=args.subset_class)
     elif args.name == "consistency_examples":
         consistency_examples(batch_size=args.batch_size, random_seed=args.random_seed, subset_class=args.subset_class)
     else:
