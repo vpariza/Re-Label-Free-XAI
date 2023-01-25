@@ -27,7 +27,7 @@ from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
 from torchvision.transforms import GaussianBlur, ToTensor
-from vision_tinyimagenet import TinyImageNet
+from lfxai.utils.datasets import TinyImageNet
 
 from lfxai.explanations.examples import (
     InfluenceFunctions,
@@ -37,12 +37,8 @@ from lfxai.explanations.examples import (
 )
 from lfxai.explanations.features import attribute_auxiliary, attribute_individual_dim
 from lfxai.models.images import (
-    VAE,
     AutoEncoderTinyImageNet,
-    ClassifierMnist,
-    DecoderBurgess,
     DecoderTinyImageNet,
-    EncoderBurgess,
     EncoderTinyImageNet,
 )
 from lfxai.models.losses import BetaHLoss, BtcvaeLoss
