@@ -158,23 +158,24 @@ def consistency_feature_importance(
         "Random": None,
     }
 
-    orig_e_mu, f_e_logvar = encoder(features, adj_norm)
+    orig_e_mu, _ = encoder(features, adj_norm)
     f_e_mu_rows = torch.mean(orig_e_mu, dim=0)
-    soft = nn.Softmax(dim=0)
-    soft_mu = soft(f_e_mu_rows)
-    target_idx = torch.argmax(soft_mu)
+
+    # Reference Node calculated as per - https://arxiv.org/pdf/1903.03894.pdf Appendix Section A
+    # find the node whose embedding is as close to that of mean.
+    target_idx = torch.argmin(abs(orig_e_mu-f_e_mu_rows), dim=1)
 
     results_data = []
     adj_norm_removed = None
     for method_name, method_obj in methods.items():
         if "Integrated Gradients" in method_name:
-                ig_attr_node = method_obj.attribute(features.unsqueeze(0), target=0,
+                ig_attr_node = method_obj.attribute(features.unsqueeze(0), target=target_idx,
                                             additional_forward_args=(adj_norm),
                                             internal_batch_size=1)
                 ig_attr_node = ig_attr_node.squeeze(0).abs().sum(dim=1)
                 ig_attr_node /= ig_attr_node.max()
         elif "Saliency" in method_name:
-                ig_attr_node = method_obj.attribute(features.unsqueeze(0), target=0,
+                ig_attr_node = method_obj.attribute(features.unsqueeze(0), target=target_idx,
                                             additional_forward_args=(adj_norm)
                                                 )
                 ig_attr_node = ig_attr_node.squeeze(0).abs().sum(dim=1)
