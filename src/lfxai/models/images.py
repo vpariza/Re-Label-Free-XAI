@@ -19,6 +19,8 @@ from lfxai.models.losses import BaseVAELoss
 from lfxai.utils.datasets import CIFAR10Pair
 from lfxai.utils.metrics import AverageMeter
 
+from lfxai.explanations.features import attribute_auxiliary_single
+
 """
  These models are adapted from
  https://medium.com/dataseries/convolutional-autoencoder-in-pytorch-on-mnist-dataset-d65145c132ac
@@ -842,6 +844,10 @@ class VAE(nn.Module):
         decoder: DecoderBurgess,
         latent_dim: int,
         loss_f: BaseVAELoss,
+        attr_method=None, # Attribution method
+        baseline_input=None, # Baseline Input for the attribution method
+        attr_prior_loss_fn=None, # Attribution prior loss function, if None no attribution prior is used
+        reg_prior=0, # Regularization parameter lambda for the prior
         name: str = "model",
     ):
         """Class which defines model and forward pass.
@@ -859,6 +865,11 @@ class VAE(nn.Module):
         self.decoder = decoder
         self.loss_f = loss_f
         self.name = name
+        #  Attribution prior information saving
+        self.baseline_input = baseline_input
+        self.reg_prior = reg_prior
+        self.attr_method = attr_method
+        self.attr_prior_loss_fn = attr_prior_loss_fn
 
     def reparameterize(self, mean, logvar):
         """Samples from a normal distribution using the reparameterization trick.
@@ -915,6 +926,17 @@ class VAE(nn.Module):
         for image_batch, _ in tqdm(dataloader, unit="batches", leave=False):
             image_batch = image_batch.to(device)
             recon_batch, latent_dist, latent_batch = self.forward(image_batch)
+            # Attribution loss in 0 unless attribution 
+            # loss function was explicitly defined
+            attr_prior_loss = 0
+            if self.attr_prior_loss_fn is not None:
+                # if the attribution loss function is defined
+                encoder = self.encoder.mu
+                attrs = attribute_auxiliary_single(
+                    encoder, image_batch, device, self.attr_method(encoder), self.baseline_input
+                )
+                attr_prior_loss = self.reg_prior * self.attr_prior_loss_fn(attrs)
+            # Loss is the loss of the VAE + attr_prior
             loss = self.loss_f(
                 image_batch,
                 recon_batch,
@@ -922,7 +944,7 @@ class VAE(nn.Module):
                 is_train=True,
                 storer=None,
                 latent_sample=latent_batch,
-            )
+            ) + attr_prior_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

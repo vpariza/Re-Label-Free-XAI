@@ -8,9 +8,10 @@ import os
 sys.path.append(os.path.abspath('../'))
 sys.path.append(os.path.abspath('../src/'))
 sys.path.append(os.path.abspath('../src/lfxai/'))
-sys.path.append(os.path.abspath('../src/lfxai/explanations'))
-sys.path.append(os.path.abspath('../src/lfxai/models'))
-sys.path.append(os.path.abspath('../src/lfxai/utils'))
+sys.path.append(os.path.abspath('../src/lfxai/explanations/'))
+sys.path.append(os.path.abspath('../src/lfxai/models/'))
+sys.path.append(os.path.abspath('../src/lfxai/utils/'))
+
 #################################
 
 import argparse
@@ -30,6 +31,8 @@ from captum.attr import GradientShap, IntegratedGradients, Saliency
 from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
+
+import time
 
 from lfxai.explanations.examples import (
     InfluenceFunctions,
@@ -68,6 +71,7 @@ from lfxai.utils.visualize import (
     vae_box_plots,
 )
 
+from lfxai.models.attr_priors import total_var_prior_attr
 
 def consistency_feature_importance(
     random_seed: int = 1,
@@ -317,6 +321,8 @@ def pretext_task_sensitivity(
     patience: int = 10,
     subtrain_size: int = 1000,
     n_plots: int = 10,
+    load_models=True,
+    show_fig=False
 ) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
@@ -373,8 +379,19 @@ def pretext_task_sensitivity(
             encoder = EncoderMnist(dim_latent)
             decoder = DecoderMnist(dim_latent)
             model = AutoEncoderMnist(encoder, decoder, dim_latent, pretext, name)
-            logging.info(f"Now fitting {name}")
-            model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+            logging.info(f"Working on {name}")
+            model_loaded = False
+            if load_models == True:
+                if (save_dir / (name + ".pt")).is_file():
+                    logging.info('Loading the pretrained model from: {}'.format((save_dir / (name + ".pt"))))
+                    model_loaded = True
+                else:
+                    logging.info('Cannot load a model from: {}'.format((save_dir / (name + ".pt"))))
+
+            if model_loaded == False:
+                logging.info('Training the model from scratch.')
+                logging.info(f"Now fitting {name}")
+                model.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
             model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
             # Compute feature importance
             logging.info("Computing feature importance")
@@ -392,19 +409,7 @@ def pretext_task_sensitivity(
             )
             # Compute example importance
             logging.info("Computing example importance")
-            # TODO: Inform the others for the fix in the NearestNeighbours instantiation
             dknn = NearestNeighbours(model=model.cpu(), loss_f=mse_loss,X_train=X_train)
-            # print("HELLLLOOO")
-            # print("idx_subtrain", type(idx_subtrain))
-            # print("X_test", type(X_test))
-            # try:
-            #     print("idx_subtrain", type(idx_subtrain.cpu().numpy()))
-            # except:
-            #     pass
-            # try:
-            #     print("idx_subtrain", type(X_test.cpu().numpy()))
-            # except:
-            #     pass
             example_importance.append(
                 np.expand_dims(dknn.attribute(X_test, idx_subtrain).cpu().numpy(), 0)
             )
@@ -413,9 +418,21 @@ def pretext_task_sensitivity(
         name = f"Classifier_run{run}"
         encoder = EncoderMnist(dim_latent)
         classifier = ClassifierMnist(encoder, dim_latent, name)
-        logging.info(f"Now fitting {name}")
-        classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
+        logging.info(f"Working on {name}")
+        model_loaded = False
+        if load_models == True:
+            if (save_dir / (name + ".pt")).is_file():
+                logging.info('Loading the pretrained model from: {}'.format((save_dir / (name + ".pt"))))
+                model_loaded = True
+            else:
+                logging.info('Cannot load a model from: {}'.format((save_dir / (name + ".pt"))))
+
+        if model_loaded == False:
+            logging.info('Training the model from scratch.')
+            logging.info(f"Now fitting {name}")
+            classifier.fit(device, train_loader, test_loader, save_dir, n_epochs, patience)
         classifier.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+        
         baseline_image = torch.zeros((1, 1, 28, 28), device=device)
         # Compute feature importance for the classifier
         logging.info("Computing feature importance")
@@ -432,7 +449,6 @@ def pretext_task_sensitivity(
         )
         # Compute example importance for the classifier
         logging.info("Computing example importance")
-        # TODO: Inform the others for the fix in the NearestNeighbours instantiation
         dknn = NearestNeighbours(model=classifier.cpu(), loss_f=mse_loss,X_train=X_train)
         example_importance.append(
             np.expand_dims(dknn.attribute(X_test, idx_subtrain).cpu().numpy(), 0)
@@ -469,7 +485,6 @@ def pretext_task_sensitivity(
             test_images_to_plot, feature_importance[:, idx_plot, :, :, :], headers
         )
         fig_features.savefig(save_dir / f"saliency_maps_run{run}.pdf")
-        plt.close(fig_features)
         fig_examples = plot_pretext_top_example(
             train_images_to_plot,
             test_images_to_plot,
@@ -477,7 +492,10 @@ def pretext_task_sensitivity(
             headers,
         )
         fig_examples.savefig(save_dir / f"top_examples_run{run}.pdf")
+        if show_fig:
+            plt.show()
         plt.close(fig_features)
+        plt.close(fig_examples)
 
     # Compute the avg and std for each metric
     feature_pearson_avg = np.round(np.mean(feature_pearson, axis=0), decimals=2)
@@ -517,6 +535,12 @@ def disvae_feature_importance(
     dim_latent: int = 3,
     n_epochs: int = 100,
     beta_list: list = [1, 5, 10],
+    reg_prior=None,
+    attr_method_name='GradientShap',
+    load_models=True,
+    load_metrics=False,
+    show_fig=False,
+    override_metrics=False,
 ) -> None:
     # Initialize seed and device
     np.random.seed(random_seed)
@@ -539,7 +563,12 @@ def disvae_feature_importance(
     )
 
     # Create saving directory
-    save_dir = Path.cwd() / "results/mnist/vae"
+    save_dir = None
+    # if reg_prior is None then no prior is used
+    if reg_prior is None:
+        save_dir = Path.cwd() / "results/mnist/vae/lat_dims_{}/{}/no_attr_prior".format(dim_latent, attr_method_name)
+    else:
+        save_dir = Path.cwd() / "results/mnist/vae/lat_dims_{}/{}/pixel_attr_prior/{}".format(dim_latent, attr_method_name, reg_prior)
     if not save_dir.exists():
         logging.info(f"Creating saving directory {save_dir}")
         os.makedirs(save_dir)
@@ -562,55 +591,92 @@ def disvae_feature_importance(
     ]
     headers = ["Loss Type", "Beta"] + metric_names
     csv_path = save_dir / "metrics.csv"
-    if not csv_path.is_file():
+    if not csv_path.is_file() or override_metrics == True:
         logging.info(f"Creating metrics csv in {csv_path}")
         with open(csv_path, "w") as csv_file:
             dw = csv.DictWriter(csv_file, delimiter=",", fieldnames=headers)
             dw.writeheader()
+    # Available Attribution Methods to use
+    attr_methods = {
+        "GradientShap": GradientShap,
+        "IntegratedGradients": IntegratedGradients
+    }
+    if load_metrics is not True:
+        # Selected Attribution method for both the evaluation and the attribution prior
+        attr_method = attr_methods[attr_method_name]
+        for beta, loss, run in itertools.product(
+            beta_list, loss_list, range(1, n_runs + 1)
+        ):
+            # Initialize vaes
+            encoder = EncoderBurgess(img_size, dim_latent)
+            decoder = DecoderBurgess(img_size, dim_latent)
+            loss.beta = beta
+            name = f"{str(loss)}-vae_beta{beta}_run{run}"
+            model = None
+            if reg_prior is None:
+                # if reg_prior is None then no prior is used
+                model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name)
+            else:
+                baseline_image = torch.zeros((1, 1, W, W), device=device)
+                model = VAE(img_size, encoder, decoder, dim_latent, loss, 
+                        attr_method=attr_method, 
+                        baseline_input=baseline_image, 
+                        attr_prior_loss_fn=total_var_prior_attr,
+                        reg_prior=reg_prior,
+                        name=name)
+            logging.info(f"Working on {name}")
+            # Keep track if model can be loaded
+            model_loaded = False
+            if load_models:
+                if (save_dir / (name + ".pt")).is_file():
+                    logging.info('Pretrained model loaded from: {}'.format((save_dir / (name + ".pt"))))
+                    model_loaded = True 
+                else:
+                     logging.info('Cannot load pretrained module from: {}'.format((save_dir / (name + ".pt"))))
+                
+            if model_loaded == False:
+                logging.info('Training the model from scratch.')
+                logging.info(f"Now fitting {name}")
+                model.fit(device, train_loader, test_loader, save_dir, n_epochs)
+                logging.info('Model trained, saved and then loaded from: {}'.format((save_dir / (name + ".pt"))))
+            model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+            # Compute test-set saliency and associated metrics
+            baseline_image = torch.zeros((1, 1, W, W), device=device)
+            gradshap = GradientShap(encoder.mu)
+            attributions = attribute_individual_dim(
+                encoder.mu, dim_latent, test_loader, device, gradshap, baseline_image
+            )
+            metrics = compute_metrics(attributions, metric_list)
+            results_str = "\t".join(
+                [f"{metric_names[k]} {metrics[k]:.2g}" for k in range(len(metric_list))]
+            )
+            logging.info(f"Model {name} \t {results_str}")
 
-    for beta, loss, run in itertools.product(
-        beta_list, loss_list, range(1, n_runs + 1)
-    ):
-        # Initialize vaes
-        encoder = EncoderBurgess(img_size, dim_latent)
-        decoder = DecoderBurgess(img_size, dim_latent)
-        loss.beta = beta
-        name = f"{str(loss)}-vae_beta{beta}_run{run}"
-        model = VAE(img_size, encoder, decoder, dim_latent, loss, name=name)
-        logging.info(f"Now fitting {name}")
-        model.fit(device, train_loader, test_loader, save_dir, n_epochs)
-        model.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+            # Save the metrics
+            with open(csv_path, "a", newline="") as csv_file:
+                writer = csv.writer(csv_file, delimiter=",")
+                writer.writerow([str(loss), beta] + metrics)
 
-        # Compute test-set saliency and associated metrics
-        baseline_image = torch.zeros((1, 1, W, W), device=device)
-        gradshap = GradientShap(encoder.mu)
-        attributions = attribute_individual_dim(
-            encoder.mu, dim_latent, test_loader, device, gradshap, baseline_image
-        )
-        metrics = compute_metrics(attributions, metric_list)
-        results_str = "\t".join(
-            [f"{metric_names[k]} {metrics[k]:.2g}" for k in range(len(metric_list))]
-        )
-        logging.info(f"Model {name} \t {results_str}")
-
-        # Save the metrics
-        with open(csv_path, "a", newline="") as csv_file:
-            writer = csv.writer(csv_file, delimiter=",")
-            writer.writerow([str(loss), beta] + metrics)
-
-        # Plot a couple of examples
-        plot_idx = [
-            torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item()
-            for n in range(n_plots)
-        ]
-        images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
-        fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx])
-        fig.savefig(save_dir / f"{name}.pdf")
-        plt.close(fig)
-
+            # Plot a couple of examples
+            plot_idx = [
+                torch.nonzero(test_dataset.targets == (n % 10))[n // 10].item()
+                for n in range(n_plots)
+            ]
+            images_to_plot = [test_dataset[i][0].numpy().reshape(W, W) for i in plot_idx]
+            fig = plot_vae_saliencies(images_to_plot, attributions[plot_idx])
+            fig.savefig(save_dir / f"{name}.pdf")
+            if show_fig:
+                plt.show()
+            plt.close(fig)
+    else:
+        logging.info('Using existing metrics to build figures.')
     fig = vae_box_plots(pd.read_csv(csv_path), metric_names)
     fig.savefig(save_dir / "metric_box_plots.pdf")
+
+    if show_fig:
+        plt.show()
     plt.close(fig)
+    
 
 
 def roar_test(
@@ -745,14 +811,30 @@ if __name__ == "__main__":
     parser.add_argument("--n_runs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=300)
     parser.add_argument("--random_seed", type=int, default=1)
+    parser.add_argument("--attr_method_name", type=str, default='GradientShap')
+    parser.add_argument("--reg_prior", type=float, default=None)
+    parser.add_argument("--load_models", action='store_true')
+    parser.add_argument("--load_metrics", action='store_true')
     args = parser.parse_args()
+    logging.info('Experiment Arguments')
+    logging.info(str(args))
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    start_time = time.time()
     if args.name == "disvae":
         disvae_feature_importance(
-            n_runs=args.n_runs, batch_size=args.batch_size, random_seed=args.random_seed
+            n_runs=args.n_runs, batch_size=args.batch_size, 
+                                random_seed=args.random_seed,
+                                reg_prior=args.reg_prior,
+                                attr_method_name=args.attr_method_name,
+                                load_models=args.load_models, 
+                                load_metrics=args.load_metrics
         )
     elif args.name == "pretext":
         pretext_task_sensitivity(
-            n_runs=args.n_runs, batch_size=args.batch_size, random_seed=args.random_seed
+            n_runs=args.n_runs, batch_size=args.batch_size, 
+                                random_seed=args.random_seed, 
+                                load_models=args.load_models,
         )
     elif args.name == "consistency_features":
         consistency_feature_importance(
@@ -764,3 +846,8 @@ if __name__ == "__main__":
         roar_test(batch_size=args.batch_size, random_seed=args.random_seed, n_epochs=10)
     else:
         raise ValueError("Invalid experiment name")
+    
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    end_time = time.time()
+    logging.info(f"Execution time: {(end_time - start_time):6.5f}s")
