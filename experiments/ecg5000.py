@@ -146,6 +146,8 @@ def consistency_example_importance(
     dim_latent: int = 16,
     n_epochs: int = 150,
     subtrain_size: int = 200,
+    load_models: bool = True,
+    load_metrics: bool = True,
     checkpoint_interval: int = 10,
 ) -> None:
     # Initialize seed and device
@@ -166,97 +168,114 @@ def consistency_example_importance(
     time_steps = 140
     n_features = 1
 
-    # Train the denoising autoencoder
-    logging.info("Fitting autoencoder")
-    autoencoder = RecurrentAutoencoder(time_steps, n_features, dim_latent)
-    save_dir = Path.cwd() / "results/ecg5000/consistency_examples"
-    if not save_dir.exists():
-        os.makedirs(save_dir)
-    autoencoder.fit(
-        device,
-        train_loader,
-        test_loader,
-        save_dir,
-        n_epochs,
-        checkpoint_interval=checkpoint_interval,
-    )
-    autoencoder.load_state_dict(
-        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-    )
+    if load_metrics is not True:
+        autoencoder = RecurrentAutoencoder(time_steps, n_features, dim_latent)
+        
+        name = autoencoder.name
+        model_loaded = False
+        if load_models == True:
+            if (save_dir / (name + ".pt")).is_file():
+                logging.info('Loading the pretrained model from: {}'.format((save_dir / (name + ".pt"))))
+                model_loaded = True
+            else:
+                logging.info('Cannot load a model from: {}'.format((save_dir / (name + ".pt"))))
 
-    # Prepare subset loaders for example-based explanation methods
-    y_train = torch.tensor([train_dataset[k][1] for k in range(len(train_dataset))])
-    idx_subtrain = [
-        torch.nonzero(y_train == (n % 2))[n // 2].item() for n in range(subtrain_size)
-    ]
-    idx_subtest = torch.randperm(len(test_dataset))[:subtrain_size]
-    train_subset = Subset(train_dataset, idx_subtrain)
-    test_subset = Subset(test_dataset, idx_subtest)
-    subtrain_loader = DataLoader(train_subset)
-    subtest_loader = DataLoader(test_subset)
-    labels_subtrain = torch.cat([label for _, label in subtrain_loader])
-    labels_subtest = torch.cat([label for _, label in subtest_loader])
-    recursion_depth = 100
-    train_sampler = RandomSampler(
-        train_dataset, replacement=True, num_samples=recursion_depth * batch_size
-    )
-    train_loader_replacement = DataLoader(
-        train_dataset, batch_size, sampler=train_sampler
-    )
-
-    # Fitting explainers, computing the metric and saving everything
-    autoencoder.train().to(device)
-    l1_loss = torch.nn.L1Loss()
-    explainer_list = [
-        InfluenceFunctions(autoencoder, l1_loss, save_dir / "if_grads"),
-        TracIn(autoencoder, l1_loss, save_dir / "tracin_grads"),
-        SimplEx(autoencoder, l1_loss),
-        NearestNeighbours(autoencoder, l1_loss),
-    ]
-    results_list = []
-    # n_top_list = [1, 2, 5, 10, 20, 30, 40, 50, 100]
-    frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
-    n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
-    for explainer in explainer_list:
-        logging.info(f"Now fitting {explainer} explainer")
-        if isinstance(explainer, InfluenceFunctions):
-            with torch.backends.cudnn.flags(enabled=False):
-                attribution = explainer.attribute_loader(
-                    device,
-                    subtrain_loader,
-                    subtest_loader,
-                    train_loader_replacement=train_loader_replacement,
-                    recursion_depth=recursion_depth,
-                )
-        else:
-            attribution = explainer.attribute_loader(
-                device, subtrain_loader, subtest_loader
+        if model_loaded == False:
+            # Train the denoising autoencoder
+            logging.info('Training the model from scratch.')
+            logging.info(f"Now fitting {name}")
+            autoencoder.fit(
+            device,
+            train_loader,
+            test_loader,
+            save_dir,
+            n_epochs,
+            checkpoint_interval=checkpoint_interval,
             )
         autoencoder.load_state_dict(
             torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
         )
-        sim_most, sim_least = similarity_rates(
-            attribution, labels_subtrain, labels_subtest, n_top_list
+
+        # Prepare subset loaders for example-based explanation methods
+        y_train = torch.tensor([train_dataset[k][1] for k in range(len(train_dataset))])
+        idx_subtrain = [
+            torch.nonzero(y_train == (n % 2))[n // 2].item() for n in range(subtrain_size)
+        ]
+        idx_subtest = torch.randperm(len(test_dataset))[:subtrain_size]
+        train_subset = Subset(train_dataset, idx_subtrain)
+        test_subset = Subset(test_dataset, idx_subtest)
+        subtrain_loader = DataLoader(train_subset)
+        subtest_loader = DataLoader(test_subset)
+        labels_subtrain = torch.cat([label for _, label in subtrain_loader])
+        labels_subtest = torch.cat([label for _, label in subtest_loader])
+        recursion_depth = 100
+        train_sampler = RandomSampler(
+            train_dataset, replacement=True, num_samples=recursion_depth * batch_size
         )
-        results_list += [
-            [str(explainer), "Most Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_most)
+        train_loader_replacement = DataLoader(
+            train_dataset, batch_size, sampler=train_sampler
+        )
+
+        # Fitting explainers, computing the metric and saving everything
+        autoencoder.train().to(device)
+        l1_loss = torch.nn.L1Loss()
+        explainer_list = [
+            InfluenceFunctions(autoencoder, l1_loss, save_dir / "if_grads"),
+            TracIn(autoencoder, l1_loss, save_dir / "tracin_grads"),
+            SimplEx(autoencoder, l1_loss),
+            NearestNeighbours(autoencoder, l1_loss),
         ]
-        results_list += [
-            [str(explainer), "Least Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_least)
-        ]
-    results_df = pd.DataFrame(
-        results_list,
-        columns=[
-            "Explainer",
-            "Type of Examples",
-            "% Examples Selected",
-            "Similarity Rate",
-        ],
-    )
-    logging.info(f"Saving results in {save_dir}")
-    results_df.to_csv(save_dir / "metrics.csv")
+        results_list = []
+        # n_top_list = [1, 2, 5, 10, 20, 30, 40, 50, 100]
+        frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
+        n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
+        for explainer in explainer_list:
+            logging.info(f"Now fitting {explainer} explainer")
+            if isinstance(explainer, InfluenceFunctions):
+                with torch.backends.cudnn.flags(enabled=False):
+                    attribution = explainer.attribute_loader(
+                        device,
+                        subtrain_loader,
+                        subtest_loader,
+                        train_loader_replacement=train_loader_replacement,
+                        recursion_depth=recursion_depth,
+                    )
+            else:
+                attribution = explainer.attribute_loader(
+                    device, subtrain_loader, subtest_loader
+                )
+            autoencoder.load_state_dict(
+                torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
+            )
+            sim_most, sim_least = similarity_rates(
+                attribution, labels_subtrain, labels_subtest, n_top_list
+            )
+            results_list += [
+                [str(explainer), "Most Important", 100 * frac, sim]
+                for frac, sim in zip(frac_list, sim_most)
+            ]
+            results_list += [
+                [str(explainer), "Least Important", 100 * frac, sim]
+                for frac, sim in zip(frac_list, sim_least)
+            ]
+        results_df = pd.DataFrame(
+            results_list,
+            columns=[
+                "Explainer",
+                "Type of Examples",
+                "% Examples Selected",
+                "Similarity Rate",
+            ],
+        )
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+
+    if (save_dir / "metrics.csv").is_file():
+        logging.info('Loading the metrics from: {}'.format((save_dir / "metrics.csv")))
+        results_df = pd.read_csv(save_dir / "metrics.csv")
+    else:
+        logging.info('Cannot load a metrics from: {}'.format((save_dir / "metrics.csv")))
+
     sns.lineplot(
         data=results_df,
         x="% Examples Selected",
@@ -266,6 +285,7 @@ def consistency_example_importance(
         palette="colorblind",
     )
     plt.savefig(save_dir / "ecg5000_similarity_rates.pdf")
+    plt.show()
 
 
 if __name__ == "__main__":

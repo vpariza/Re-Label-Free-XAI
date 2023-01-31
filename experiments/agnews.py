@@ -161,6 +161,8 @@ def consistency_example_importance(
     subtrain_size: int = 200,
     checkpoint_interval: int = 1,
     use_saved_dataset: bool = False,
+    load_models: bool = True,
+    load_metrics: bool = True,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
@@ -179,143 +181,165 @@ def consistency_example_importance(
     if not save_dir.exists():
         os.makedirs(save_dir)
 
-    # Load dataset
-    max_sentences_length = 200
-    MAX_LEN = 64
+    if load_metrics is not True:
+        # Load dataset
+        max_sentences_length = 200
+        MAX_LEN = 64
 
-    if use_saved_dataset:
-        print("Loading existing saved dataset")
-        train_dataset = torch.load('results/agnews/consistency_examples/train_dataset.pt')
-        test_dataset = torch.load('results/agnews/consistency_examples/test_dataset.pt')
-    else:
-        tokenizer, train_pair, test_pair = prepareData(data_dir, max_sentences_length)
-
-        train_dataset = AG_NEWS_Tensors(
-            sentences=train_pair[0], labels=train_pair[1], 
-            tokenizer=tokenizer, max_len=MAX_LEN, device=device)
-        test_dataset = AG_NEWS_Tensors(
-            sentences=test_pair[0], labels=test_pair[1], 
-            tokenizer=tokenizer, max_len=MAX_LEN, device=device)
-
-    MAX_LEN = 64
-
-    if use_saved_dataset:
-        print("Loading existing saved dataset")
-        train_dataset = torch.load('results/agnews/consistency_examples/train_dataset.pt')
-        test_dataset = torch.load('results/agnews/consistency_examples/test_dataset.pt')
-    else:
-        tokenizer, train_pair, test_pair = prepareData(data_dir, max_sentences_length)
-
-        train_dataset = AG_NEWS_Tensors(
-            sentences=train_pair[0], labels=train_pair[1], 
-            tokenizer=tokenizer, max_len=MAX_LEN, device=device)
-        test_dataset = AG_NEWS_Tensors(
-            sentences=test_pair[0], labels=test_pair[1], 
-            tokenizer=tokenizer, max_len=MAX_LEN, device=device)
-
-
-    train_loader = DataLoader(train_dataset, batch_size=None)
-    test_loader = DataLoader(test_dataset, batch_size=None)
-    vocab_size = train_dataset.tokenizer.get_vocab_size()
-
-    # Train the denoising autoencoder
-    logging.info("Fitting autoencoder")
-    autoencoder = AGNewsAE(device, MAX_LEN, vocab_size, dim_latent)
-
-    autoencoder.fit(
-        device,
-        train_loader,
-        test_loader,
-        save_dir,
-        n_epochs,
-        checkpoint_interval=checkpoint_interval,
-    )
-    autoencoder.load_state_dict(
-        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-    )
-
-    # Prepare subset loaders for example-based explanation methods
-    y_train = torch.tensor([train_dataset[k][1] for k in range(len(train_dataset))])
-    idx_subtrain = [
-        torch.nonzero(y_train == (n % 2))[n // 2].item() for n in range(subtrain_size)
-    ]
-    idx_subtest = torch.randperm(len(test_dataset))[:subtrain_size]
-    train_subset = Subset(train_dataset, idx_subtrain)
-    test_subset = Subset(test_dataset, idx_subtest)
-    subtrain_loader = DataLoader(train_subset, batch_size=None)
-    subtest_loader = DataLoader(test_subset, batch_size=None)
-
-    labels_subtrain = torch.stack([label for _, label in subtrain_loader])
-    labels_subtest = torch.stack([label for _, label in subtest_loader])
-    recursion_depth = 100
-    train_sampler = RandomSampler(
-        train_dataset, replacement=True, num_samples=recursion_depth * batch_size
-    )
-    train_loader_replacement = DataLoader(
-        train_dataset, batch_size=None, sampler=train_sampler
-    )
-
-    if len(autoencoder.checkpoints_files) == 0:
-        for epoch in range(n_epochs):
-            n_checkpoint = 1 + epoch // checkpoint_interval
-            path_to_checkpoint = (
-                save_dir / f"{autoencoder.name}_checkpoint{n_checkpoint}.pt"
-            )
-            autoencoder.checkpoints_files.append(path_to_checkpoint)
-
-    # Fitting explainers, computing the metric and saving everything
-    autoencoder.train().to(device)
-    nll_loss = torch.nn.NLLLoss()
-    explainer_list = [
-        InfluenceFunctions(autoencoder, nll_loss, save_dir / "if_grads"),
-        TracIn(autoencoder, nll_loss, save_dir / "tracin_grads"),
-        SimplEx(autoencoder, nll_loss),
-        NearestNeighbours(autoencoder, nll_loss),
-    ]
-    results_list = []
-    # n_top_list = [1, 2, 5, 10, 20, 30, 40, 50, 100]
-    frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
-    n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
-    for explainer in explainer_list:
-        logging.info(f"Now fitting {explainer} explainer")
-        if isinstance(explainer, InfluenceFunctions):
-            with torch.backends.cudnn.flags(enabled=False):
-                attribution = explainer.attribute_loader(
-                    device,
-                    subtrain_loader,
-                    subtest_loader,
-                    train_loader_replacement=train_loader_replacement,
-                    recursion_depth=recursion_depth,
-                )
+        if use_saved_dataset:
+            print("Loading existing saved dataset")
+            train_dataset = torch.load('results/agnews/consistency_examples/train_dataset.pt')
+            test_dataset = torch.load('results/agnews/consistency_examples/test_dataset.pt')
         else:
-            attribution = explainer.attribute_loader(
-                device, subtrain_loader, subtest_loader
+            tokenizer, train_pair, test_pair = prepareData(data_dir, max_sentences_length)
+
+            train_dataset = AG_NEWS_Tensors(
+                sentences=train_pair[0], labels=train_pair[1], 
+                tokenizer=tokenizer, max_len=MAX_LEN, device=device)
+            test_dataset = AG_NEWS_Tensors(
+                sentences=test_pair[0], labels=test_pair[1], 
+                tokenizer=tokenizer, max_len=MAX_LEN, device=device)
+
+        MAX_LEN = 64
+
+        if use_saved_dataset:
+            print("Loading existing saved dataset")
+            train_dataset = torch.load('results/agnews/consistency_examples/train_dataset.pt')
+            test_dataset = torch.load('results/agnews/consistency_examples/test_dataset.pt')
+        else:
+            tokenizer, train_pair, test_pair = prepareData(data_dir, max_sentences_length)
+
+            train_dataset = AG_NEWS_Tensors(
+                sentences=train_pair[0], labels=train_pair[1], 
+                tokenizer=tokenizer, max_len=MAX_LEN, device=device)
+            test_dataset = AG_NEWS_Tensors(
+                sentences=test_pair[0], labels=test_pair[1], 
+                tokenizer=tokenizer, max_len=MAX_LEN, device=device)
+
+
+        train_loader = DataLoader(train_dataset, batch_size=None)
+        test_loader = DataLoader(test_dataset, batch_size=None)
+        vocab_size = train_dataset.tokenizer.get_vocab_size()
+
+        # Train the denoising autoencoder
+        logging.info("Fitting autoencoder")
+        autoencoder = AGNewsAE(device, MAX_LEN, vocab_size, dim_latent)
+
+        name = autoencoder.name
+        model_loaded = False
+        if load_models == True:
+            if (save_dir / (name + ".pt")).is_file():
+                logging.info('Loading the pretrained model from: {}'.format((save_dir / (name + ".pt"))))
+                model_loaded = True
+            else:
+                logging.info('Cannot load a model from: {}'.format((save_dir / (name + ".pt"))))
+
+        if model_loaded == False:
+            # Train the denoising autoencoder
+            logging.info('Training the model from scratch.')
+            logging.info(f"Now fitting {name}")
+            autoencoder.fit(
+            device,
+            train_loader,
+            test_loader,
+            save_dir,
+            n_epochs,
+            checkpoint_interval=checkpoint_interval,
             )
+        
         autoencoder.load_state_dict(
             torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
         )
-        sim_most, sim_least = similarity_rates(
-            attribution, labels_subtrain, labels_subtest, n_top_list
+
+        # Prepare subset loaders for example-based explanation methods
+        y_train = torch.tensor([train_dataset[k][1] for k in range(len(train_dataset))])
+        idx_subtrain = [
+            torch.nonzero(y_train == (n % 2))[n // 2].item() for n in range(subtrain_size)
+        ]
+        idx_subtest = torch.randperm(len(test_dataset))[:subtrain_size]
+        train_subset = Subset(train_dataset, idx_subtrain)
+        test_subset = Subset(test_dataset, idx_subtest)
+        subtrain_loader = DataLoader(train_subset, batch_size=None)
+        subtest_loader = DataLoader(test_subset, batch_size=None)
+
+        labels_subtrain = torch.stack([label for _, label in subtrain_loader])
+        labels_subtest = torch.stack([label for _, label in subtest_loader])
+        recursion_depth = 100
+        train_sampler = RandomSampler(
+            train_dataset, replacement=True, num_samples=recursion_depth * batch_size
         )
-        results_list += [
-            [str(explainer), "Most Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_most)
+        train_loader_replacement = DataLoader(
+            train_dataset, batch_size=None, sampler=train_sampler
+        )
+
+        if len(autoencoder.checkpoints_files) == 0:
+            for epoch in range(n_epochs):
+                n_checkpoint = 1 + epoch // checkpoint_interval
+                path_to_checkpoint = (
+                    save_dir / f"{autoencoder.name}_checkpoint{n_checkpoint}.pt"
+                )
+                autoencoder.checkpoints_files.append(path_to_checkpoint)
+
+        # Fitting explainers, computing the metric and saving everything
+        autoencoder.train().to(device)
+        nll_loss = torch.nn.NLLLoss()
+        explainer_list = [
+            InfluenceFunctions(autoencoder, nll_loss, save_dir / "if_grads"),
+            TracIn(autoencoder, nll_loss, save_dir / "tracin_grads"),
+            SimplEx(autoencoder, nll_loss),
+            NearestNeighbours(autoencoder, nll_loss),
         ]
-        results_list += [
-            [str(explainer), "Least Important", 100 * frac, sim]
-            for frac, sim in zip(frac_list, sim_least)
-        ]
-    results_df = pd.DataFrame(
-        results_list,
-        columns=[
-            "Explainer",
-            "Type of Examples",
-            "% Examples Selected",
-            "Similarity Rate",
-        ],
-    )
-    logging.info(f"Saving results in {save_dir}")
-    results_df.to_csv(save_dir / "metrics.csv")
+        results_list = []
+        # n_top_list = [1, 2, 5, 10, 20, 30, 40, 50, 100]
+        frac_list = [0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
+        n_top_list = [int(frac * len(idx_subtrain)) for frac in frac_list]
+        for explainer in explainer_list:
+            logging.info(f"Now fitting {explainer} explainer")
+            if isinstance(explainer, InfluenceFunctions):
+                with torch.backends.cudnn.flags(enabled=False):
+                    attribution = explainer.attribute_loader(
+                        device,
+                        subtrain_loader,
+                        subtest_loader,
+                        train_loader_replacement=train_loader_replacement,
+                        recursion_depth=recursion_depth,
+                    )
+            else:
+                attribution = explainer.attribute_loader(
+                    device, subtrain_loader, subtest_loader
+                )
+            autoencoder.load_state_dict(
+                torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
+            )
+            sim_most, sim_least = similarity_rates(
+                attribution, labels_subtrain, labels_subtest, n_top_list
+            )
+            results_list += [
+                [str(explainer), "Most Important", 100 * frac, sim]
+                for frac, sim in zip(frac_list, sim_most)
+            ]
+            results_list += [
+                [str(explainer), "Least Important", 100 * frac, sim]
+                for frac, sim in zip(frac_list, sim_least)
+            ]
+        results_df = pd.DataFrame(
+            results_list,
+            columns=[
+                "Explainer",
+                "Type of Examples",
+                "% Examples Selected",
+                "Similarity Rate",
+            ],
+        )
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+    
+    if (save_dir / "metrics.csv").is_file():
+        logging.info('Loading the metrics from: {}'.format((save_dir / "metrics.csv")))
+        results_df = pd.read_csv(save_dir / "metrics.csv")
+    else:
+        logging.info('Cannot load a metrics from: {}'.format((save_dir / "metrics.csv")))
+
     sns.lineplot(
         data=results_df,
         x="% Examples Selected",
@@ -325,6 +349,7 @@ def consistency_example_importance(
         palette="colorblind",
     )
     plt.savefig(save_dir / "agnews_similarity_rates.pdf")
+    plt.show()
 
 
 if __name__ == "__main__":

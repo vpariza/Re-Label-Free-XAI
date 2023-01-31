@@ -12,14 +12,14 @@ hydra:
 
 dataset: cifar10
 data_dir: data/cifar10
-experiment_name: consistency_features # consistency_features or consistency_examples
+experiment_name: consistency_examples # consistency_features or consistency_examples
 
 # model
 backbone: resnet18 # or resnet34, resnet50
 projection_dim: 128 # "[...] to project the representation to a 128-dimensional latent space"
 
 # train options
-seed: 42 # sacred handles automatic seeding when passed in the config
+seed: 1 # sacred handles automatic seeding when passed in the config
 batch_size: 512
 workers: 1
 epochs: 100
