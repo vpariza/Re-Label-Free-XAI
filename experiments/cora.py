@@ -37,7 +37,7 @@ from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, RandomSampler, Subset
 from torchvision import transforms
 from torchvision.transforms import GaussianBlur, ToTensor
-from vision_tinyimagenet import TinyImageNet
+
 
 import torch.nn as nn
 from torch_geometric.nn import  to_captum_model
@@ -98,9 +98,7 @@ def generate_mask(imp_nodes, perc, adj_norm, is_random=False):
 
 def consistency_feature_importance(
      random_seed: int = 1,
-    batch_size: int = 1000,
-    dim_latent: int = 4,
-    n_epochs: int = 3,
+    n_epochs: int = 100,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
@@ -209,7 +207,7 @@ def consistency_feature_importance(
     )
     plt.tight_layout()
     plt.savefig(save_dir / "consistency_features.pdf")
-    plt.close()
+    plt.show()
 
 if __name__ == "__main__":
     logging.basicConfig(
