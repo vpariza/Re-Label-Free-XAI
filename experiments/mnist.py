@@ -78,12 +78,14 @@ def consistency_feature_importance(
     batch_size: int = 200,
     dim_latent: int = 4,
     n_epochs: int = 100,
+    load_models: bool = True,
+    load_metrics: bool = True
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     W = 28  # Image width = height
-    pert_percentages = [5, 10, 20, 50, 80, 100]
+    pert_percentages = [5, 10, 20]# 50, 80, 100]
 
     # Load MNIST
     data_dir = Path.cwd() / "data/mnist"
@@ -106,74 +108,99 @@ def consistency_feature_importance(
     encoder.to(device)
     decoder.to(device)
 
-    # Train the denoising autoencoder
     save_dir = Path.cwd() / "results/mnist/consistency_features"
     if not save_dir.exists():
         os.makedirs(save_dir)
-    autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
-    autoencoder.load_state_dict(
-        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-    )
+    
+    
+    load_metrics = load_metrics and (save_dir / "metrics.csv").is_file()
+   
+    if not load_metrics:
+        name = autoencoder.name
+        model_loaded = False
+        if load_models:
+            if (save_dir / (name + ".pt")).is_file():
+                logging.info('Loading the pretrained model from: {}'.format((save_dir / (name + ".pt"))))
+                model_loaded = True
+            else:
+                logging.info('Cannot load a model from: {}'.format((save_dir / (name + ".pt"))))
 
-    attr_methods = {
-        "Gradient Shap": GradientShap,
-        "Integrated Gradients": IntegratedGradients,
-        "Saliency": Saliency,
-        "Random": None,
-    }
-    results_data = []
-    baseline_features = torch.zeros((1, 1, W, W)).to(
-        device
-    )  # Baseline image for attributions
-    is_baseline_normalised = False  # Extension
-    for method_name in attr_methods:
-        logging.info(f"Computing feature importance with {method_name}")
-        results_data.append([method_name, 0, 0])
-        attr_method = attr_methods[method_name]
-        if attr_method is not None:
-            attr = attribute_auxiliary(
-                encoder, test_loader, device, attr_method(encoder), baseline_features
-            )
-        else:
-            np.random.seed(random_seed)
-            attr = np.random.randn(len(test_dataset), 1, W, W)
+        if not model_loaded:
+            # Train the denoising autoencoder
+            logging.info('Training the model from scratch.')
+            logging.info(f"Now fitting {name}")
+            autoencoder.fit(device, train_loader, test_loader, save_dir, n_epochs)
 
-        for pert_percentage in pert_percentages:
-            logging.info(
-                f"Perturbing {pert_percentage}% of the features with {method_name}"
-            )
-            mask_size = int(pert_percentage * W**2 / 100)
-            masks = generate_masks(attr, mask_size, is_normalised=False) # Extension
-            for batch_id, (images, _) in enumerate(test_loader):
-                mask = masks[
-                    batch_id * batch_size : batch_id * batch_size + len(images)
-                ].to(device)
-                images = images.to(device)
-                original_reps = encoder(images)
-                if not is_baseline_normalised:
-                   images = mask * images
-                else:
-                    is_add_noise = False # Extension (Adding noise to baseline image)
-                    N, C, H, W = images.size()
-                    flat_images = images.view(N, C*H*W)
-                    max_in_flat = torch.max(flat_images, dim=-1, keepdim=False)[0] 
-                    if not is_add_noise:
-                      baseline = (1-images)/max_in_flat[:,None,None,None]
+        autoencoder.load_state_dict(torch.load(save_dir / (name + ".pt")), strict=False)
+
+        attr_methods = {
+            "Gradient Shap": GradientShap,
+            "Integrated Gradients": IntegratedGradients,
+            "Saliency": Saliency,
+            "Random": None,
+        }
+        results_data = []
+        baseline_features = torch.zeros((1, 1, W, W)).to(
+            device
+        )  # Baseline image for attributions
+        is_baseline_normalised = False  # Extension
+        for method_name in attr_methods:
+            logging.info(f"Computing feature importance with {method_name}")
+            results_data.append([method_name, 0, 0])
+            attr_method = attr_methods[method_name]
+            if attr_method is not None:
+                attr = attribute_auxiliary(
+                    encoder, test_loader, device, attr_method(encoder), baseline_features
+                )
+            else:
+                np.random.seed(random_seed)
+                attr = np.random.randn(len(test_dataset), 1, W, W)
+
+            for pert_percentage in pert_percentages:
+                logging.info(
+                    f"Perturbing {pert_percentage}% of the features with {method_name}"
+                )
+                mask_size = int(pert_percentage * W**2 / 100)
+                masks = generate_masks(attr, mask_size, is_normalised=False) # Extension
+                for batch_id, (images, _) in enumerate(test_loader):
+                    mask = masks[
+                        batch_id * batch_size : batch_id * batch_size + len(images)
+                    ].to(device)
+                    images = images.to(device)
+                    original_reps = encoder(images)
+                    if not is_baseline_normalised:
+                       images = mask * images
                     else:
-                        noise = torch.normal(0, 1, size=(N, C, H, W))
-                        baseline = noise*(1-images)/max_in_flat[:,None,None,None]  
-                    images = mask * images + (1-mask)*baseline
-               
-                pert_reps = encoder(images)
-                rep_shift = torch.mean(
-                    torch.sum((original_reps - pert_reps) ** 2, dim=-1)
-                ).item()
-                results_data.append([method_name, pert_percentage, rep_shift])
+                        is_add_noise = False # Extension (Adding noise to baseline image)
+                        N, C, H, W = images.size()
+                        flat_images = images.view(N, C*H*W)
+                        max_in_flat = torch.max(flat_images, dim=-1, keepdim=False)[0] 
+                        if not is_add_noise:
+                           baseline = (1-images)/max_in_flat[:,None,None,None]
+                        else:
+                            noise = torch.normal(0, 1, size=(N, C, H, W))
+                            baseline = noise*(1-images)/max_in_flat[:,None,None,None]  
+                        images = mask * images + (1-mask)*baseline
+                
+                    pert_reps = encoder(images)
+                    rep_shift = torch.mean(
+                        torch.sum((original_reps - pert_reps) ** 2, dim=-1)
+                    ).item()
+                    results_data.append([method_name, pert_percentage, rep_shift])
 
-    logging.info("Saving the plot")
-    results_df = pd.DataFrame(
-        results_data, columns=["Method", "% Perturbed Pixels", "Representation Shift"]
-    )
+        logging.info("Saving the plot")
+        results_df = pd.DataFrame(
+            results_data, columns=["Method", "% Perturbed Pixels", "Representation Shift"]
+        )
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+   
+    if (save_dir / "metrics.csv").is_file():
+        logging.info('Loading the metrics from: {}'.format((save_dir / "metrics.csv")))
+        results_df = pd.read_csv(save_dir / "metrics.csv")
+    else:
+        logging.info('Cannot load a metrics from: {}'.format((save_dir / "metrics.csv")))
+
     sns.set(font_scale=1.3)
     sns.set_style("white")
     sns.set_palette("colorblind")
@@ -182,7 +209,8 @@ def consistency_feature_importance(
     )
     plt.tight_layout()
     plt.savefig(save_dir / "mnist_consistency_features.pdf")
-    plt.close()
+    plt.show()
+    # plt.close()
 
 
 def consistency_examples(
