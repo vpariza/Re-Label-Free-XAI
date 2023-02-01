@@ -85,7 +85,7 @@ def consistency_feature_importance(
     torch.random.manual_seed(random_seed)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     W = 28  # Image width = height
-    pert_percentages = [5, 10, 20]# 50, 80, 100]
+    pert_percentages = [5, 10, 20, 50, 80, 100]
 
     # Load MNIST
     data_dir = Path.cwd() / "data/mnist"
