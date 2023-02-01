@@ -48,80 +48,102 @@ def fit_model(args: DictConfig):
 
 
 def consistency_feature_importance(args: DictConfig):
+    
+    try:
+       load_metrics, load_models = args.load_metrics, args.load_models
+    except Exception as error:
+        print("Key Error occurring while loading parameters through yml file.")
+        load_metrics, load_models = False, False    
+
     torch.manual_seed(args.seed)
-    save_dir = Path.cwd() / "consistency_features"
+    save_dir = Path.cwd() / f"results/{args.dataset}/{args.experiment_name}/{args.backbone}"
     if not save_dir.exists():
         os.makedirs(save_dir)
-    model_path = Path.cwd() / f"models/simclr_{args.backbone}_epoch{args.epochs}.pt"
-    # Fit a model if it does not exist yet
-    if not model_path.exists():
-        if not (Path.cwd() / "models").exists():
-            os.makedirs(Path.cwd() / "models")
-        fit_model(args)
+    model_path = save_dir / f"models/simclr_{args.backbone}_epoch{args.epochs}.pt"
 
-    # Prepare the model
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    pert_percentages = [5, 10, 20, 50, 80, 100]
-    perturbation = GaussianBlur(21, sigma=5).to(device)
+    load_metrics = load_metrics and (save_dir / "metrics.csv").is_file()
+    if not load_metrics:
+        # Fit a model if it does not exist yet
+        if not model_path.exists() or not load_models:
+            if not (save_dir / "models").exists():
+                os.makedirs(save_dir / "models")
+            fit_model(args)
 
-    assert args.backbone in ["resnet18", "resnet34"]
-    base_encoder = eval(args.backbone)
-    model = SimCLR(base_encoder, projection_dim=args.projection_dim).to(device)
-    logging.info(
-        f"Base model: {args.backbone} - feature dim: {model.feature_dim} - projection dim {args.projection_dim}"
-    )
-    model.load_state_dict(torch.load(model_path), strict=False)
+        # Prepare the model
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        pert_percentages = [5, 10, 20, 50, 80, 100]
+        perturbation = GaussianBlur(21, sigma=5).to(device)
 
-    # Compute feature importance
-    W = 32
-    test_batch_size = int(args.batch_size / 20)
-    encoder = model.encoder
-    data_dir = hydra.utils.to_absolute_path(args.data_dir)
-    test_set = CIFAR10(data_dir, False, transform=ToTensor())
-    test_loader = DataLoader(test_set, test_batch_size)
-    attr_methods = {
-        "Gradient Shap": GradientShap,
-        "Integrated Gradients": IntegratedGradients,
-        "Saliency": Saliency,
-        "Random": None,
-    }
-    results_data = []
-    for method_name in attr_methods:
-        logging.info(f"Computing feature importance with {method_name}")
-        results_data.append([method_name, 0, 0])
-        attr_method = attr_methods[method_name]
-        if attr_method is not None:
-            attr = attribute_auxiliary(
-                encoder, test_loader, device, attr_method(encoder), perturbation
-            )
+        assert args.backbone in ["resnet18", "resnet34"]
+        base_encoder = eval(args.backbone)
+        model = SimCLR(base_encoder, projection_dim=args.projection_dim).to(device)
+        logging.info(
+            f"Base model: {args.backbone} - feature dim: {model.feature_dim} - projection dim {args.projection_dim}"
+        )
+        if torch.cuda.is_available():
+          model.load_state_dict(torch.load(model_path), strict=False)
         else:
-            np.random.seed(args.seed)
-            attr = np.random.randn(len(test_set), 1, W, W)
+          model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")), strict=False)
 
-        for pert_percentage in pert_percentages:
-            logging.info(
-                f"Perturbing {pert_percentage}% of the features with {method_name}"
-            )
-            mask_size = int(pert_percentage * W**2 / 100)
-            masks = generate_masks(attr, mask_size)
-            for batch_id, (images, _) in enumerate(test_loader):
-                mask = masks[
-                    batch_id * test_batch_size : batch_id * test_batch_size
-                    + len(images)
-                ].to(device)
-                images = images.to(device)
-                original_reps = encoder(images)
-                images = mask * images + (1 - mask) * perturbation(images)
-                pert_reps = encoder(images)
-                rep_shift = torch.mean(
-                    torch.sum((original_reps - pert_reps) ** 2, dim=-1)
-                ).item()
-                results_data.append([method_name, pert_percentage, rep_shift])
+        # Compute feature importance
+        W = 32
+        test_batch_size = int(args.batch_size / 20)
+        encoder = model.encoder
+        data_dir = hydra.utils.to_absolute_path(args.data_dir)
+        test_set = CIFAR10(data_dir, False, transform=ToTensor())
+        test_loader = DataLoader(test_set, test_batch_size)
+        attr_methods = {
+            "Gradient Shap": GradientShap,
+            "Integrated Gradients": IntegratedGradients,
+            "Saliency": Saliency,
+            "Random": None,
+        }
+        results_data = []
+        for method_name in attr_methods:
+            logging.info(f"Computing feature importance with {method_name}")
+            results_data.append([method_name, 0, 0])
+            attr_method = attr_methods[method_name]
+            if attr_method is not None:
+                attr = attribute_auxiliary(
+                    encoder, test_loader, device, attr_method(encoder), perturbation
+                )
+            else:
+                np.random.seed(args.seed)
+                attr = np.random.randn(len(test_set), 1, W, W)
 
-    logging.info("Saving the plot")
-    results_df = pd.DataFrame(
-        results_data, columns=["Method", "% Perturbed Pixels", "Representation Shift"]
-    )
+            for pert_percentage in pert_percentages:
+                logging.info(
+                    f"Perturbing {pert_percentage}% of the features with {method_name}"
+                )
+                mask_size = int(pert_percentage * W**2 / 100)
+                masks = generate_masks(attr, mask_size)
+                for batch_id, (images, _) in enumerate(test_loader):
+                    mask = masks[
+                        batch_id * test_batch_size : batch_id * test_batch_size
+                        + len(images)
+                    ].to(device)
+                    images = images.to(device)
+                    original_reps = encoder(images)
+                    images = mask * images + (1 - mask) * perturbation(images)
+                    pert_reps = encoder(images)
+                    rep_shift = torch.mean(
+                        torch.sum((original_reps - pert_reps) ** 2, dim=-1)
+                    ).item()
+                    results_data.append([method_name, pert_percentage, rep_shift])
+
+        logging.info("Saving the plot")
+        results_df = pd.DataFrame(
+            results_data, columns=["Method", "% Perturbed Pixels", "Representation Shift"]
+        )
+        results_df.to_csv(save_dir / "metrics.csv")
+
+
+    if (save_dir / "metrics.csv").is_file():
+        logging.info('Loading the metrics from: {}'.format((save_dir / "metrics.csv")))
+        results_df = pd.read_csv(save_dir / "metrics.csv")
+    else:
+        logging.info('Cannot load a metrics from: {}'.format((save_dir / "metrics.csv")))  
+
     sns.set(font_scale=1.3)
     sns.set_style("white")
     sns.set_palette("colorblind")
@@ -130,7 +152,8 @@ def consistency_feature_importance(args: DictConfig):
     )
     plt.tight_layout()
     plt.savefig(save_dir / "cifar10_consistency_features.pdf")
-    plt.close()
+    # plt.close()
+    plt.show()
 
 
 def consistency_example_importance(args: DictConfig) -> None:
