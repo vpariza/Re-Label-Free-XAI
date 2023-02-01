@@ -44,6 +44,8 @@ def consistency_feature_importance(
     dim_latent: int = 64,
     n_epochs: int = 150,
     val_proportion: float = 0.2,
+    load_models: bool = True,
+    load_metrics: bool = True
 ) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -73,59 +75,86 @@ def consistency_feature_importance(
 
     # Fit an autoencoder
     autoencoder = RecurrentAutoencoder(time_steps, n_features, dim_latent)
-    autoencoder.fit(device, train_loader, val_loader, save_dir, n_epochs, patience=10)
-    autoencoder.train()
-    encoder = autoencoder.encoder
-    autoencoder.load_state_dict(
-        torch.load(save_dir / (autoencoder.name + ".pt")), strict=False
-    )
-    autoencoder.to(device)
+    
+    load_metrics = load_metrics and (save_dir / "metrics.csv").is_file()
+    
+    if not load_metrics:
+        name = autoencoder.name
+        model_loaded = False
+        if load_models:
+            if (save_dir / (name + ".pt")).is_file():
+                logging.info('Loading the pretrained model from: {}'.format((save_dir / (name + ".pt"))))
+                model_loaded = True
+            else:
+                logging.info('Cannot load a model from: {}'.format((save_dir / (name + ".pt"))))
 
-    attr_methods = {
-        "Gradient Shap": GradientShap,
-        "Integrated Gradients": IntegratedGradients,
-        "Saliency": Saliency,
-        "Random": None,
-    }
-    results_data = []
-    pert_percentages = [5, 10, 20, 50, 80, 100]
+        if not model_loaded:
+            # Train the denoising autoencoder
+            logging.info('Training the model from scratch.')
+            logging.info(f"Now fitting {name}")
+            autoencoder.fit(device, train_loader, val_loader, save_dir, n_epochs, patience=10)
+            autoencoder.train()
+   
+        encoder = autoencoder.encoder
+        autoencoder.load_state_dict(
+            torch.load(save_dir / (name + ".pt")), strict=False
+        )
+        autoencoder.to(device)
 
-    for method_name in attr_methods:
-        logging.info(f"Computing feature importance with {method_name}")
-        results_data.append([method_name, 0, 0])
-        attr_method = attr_methods[method_name]
-        if attr_method is not None:
-            attr = attribute_auxiliary(
-                encoder, test_loader, device, attr_method(encoder), baseline_sequence
-            )
-        else:
-            np.random.seed(random_seed)
-            attr = np.random.randn(len(test_dataset), time_steps, 1)
+        attr_methods = {
+            "Gradient Shap": GradientShap,
+            "Integrated Gradients": IntegratedGradients,
+            "Saliency": Saliency,
+            "Random": None,
+        }
+        results_data = []
+        pert_percentages = [5, 10, 20, 50, 80, 100]
 
-        for pert_percentage in pert_percentages:
-            logging.info(
-                f"Perturbing {pert_percentage}% of the features with {method_name}"
-            )
-            mask_size = int(pert_percentage * time_steps / 100)
-            masks = generate_tseries_masks(attr, mask_size)
-            for batch_id, (tseries, _) in enumerate(test_loader):
-                mask = masks[
-                    batch_id * batch_size : batch_id * batch_size + len(tseries)
-                ].to(device)
-                tseries = tseries.to(device)
-                original_reps = encoder(tseries)
-                tseries_pert = mask * tseries + (1 - mask) * baseline_sequence
-                pert_reps = encoder(tseries_pert)
-                rep_shift = torch.mean(
-                    torch.sum((original_reps - pert_reps) ** 2, dim=-1)
-                ).item()
-                results_data.append([method_name, pert_percentage, rep_shift])
+        for method_name in attr_methods:
+            logging.info(f"Computing feature importance with {method_name}")
+            results_data.append([method_name, 0, 0])
+            attr_method = attr_methods[method_name]
+            if attr_method is not None:
+                attr = attribute_auxiliary(
+                    encoder, test_loader, device, attr_method(encoder), baseline_sequence
+                )
+            else:
+                np.random.seed(random_seed)
+                attr = np.random.randn(len(test_dataset), time_steps, 1)
 
-    logging.info(f"Saving results in {save_dir}")
-    results_df = pd.DataFrame(
-        results_data,
-        columns=["Method", "% Perturbed Time Steps", "Representation Shift"],
-    )
+            for pert_percentage in pert_percentages:
+                logging.info(
+                    f"Perturbing {pert_percentage}% of the features with {method_name}"
+                )
+                mask_size = int(pert_percentage * time_steps / 100)
+                masks = generate_tseries_masks(attr, mask_size)
+                for batch_id, (tseries, _) in enumerate(test_loader):
+                    mask = masks[
+                        batch_id * batch_size : batch_id * batch_size + len(tseries)
+                    ].to(device)
+                    tseries = tseries.to(device)
+                    original_reps = encoder(tseries)
+                    tseries_pert = mask * tseries + (1 - mask) * baseline_sequence
+                    pert_reps = encoder(tseries_pert)
+                    rep_shift = torch.mean(
+                        torch.sum((original_reps - pert_reps) ** 2, dim=-1)
+                    ).item()
+                    results_data.append([method_name, pert_percentage, rep_shift])
+
+        logging.info(f"Saving results in {save_dir}")
+        results_df = pd.DataFrame(
+            results_data,
+            columns=["Method", "% Perturbed Time Steps", "Representation Shift"],
+        )
+        logging.info(f"Saving results in {save_dir}")
+        results_df.to_csv(save_dir / "metrics.csv")
+
+    if (save_dir / "metrics.csv").is_file():
+        logging.info('Loading the metrics from: {}'.format((save_dir / "metrics.csv")))
+        results_df = pd.read_csv(save_dir / "metrics.csv")
+    else:
+        logging.info('Cannot load a metrics from: {}'.format((save_dir / "metrics.csv")))
+
     sns.set(font_scale=1.3)
     sns.set_style("white")
     sns.set_palette("colorblind")
@@ -137,7 +166,8 @@ def consistency_feature_importance(
     )
     plt.tight_layout()
     plt.savefig(save_dir / "ecg5000_consistency_features.pdf")
-    plt.close()
+    # plt.close()
+    plt.show()
 
 
 def consistency_example_importance(
