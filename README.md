@@ -1,4 +1,4 @@
-# Reproduccibility Study Label-Free XAI
+# Reproducibility Study Label-Free XAI
 
 ## Summary
 This repository includes code for implementations, experiments and supplementary studies used for reproducing the work and the experiments of the work [ICML 2022 paper](https://arxiv.org/abs/2203.01928): 'Label-Free Explainability for Unsupervised Models' by Jonathan Crabbé and Mihaela van der Schaar.
