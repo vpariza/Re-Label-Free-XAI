@@ -131,54 +131,11 @@ python -m agnews --name consistency_examples
 
 ### MNIST Experiments
 #### Challenging the Generalizability of the authors' Assumptions on Disentangled VAEs
-In the `experiments` folder, run the following scripts for the experiments that use the Gradient Shap as a Feature Importance Method:
-1. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.001
+In the `experiments` folder, run the following scripts: 
 ```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.001 --attr_method_name GradientShap
+python -m mnist --name disvae --n_runs 5 --reg_prior reg_param --attr_method_name method_name
 ```
 
-2. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.005
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.005 --attr_method_name GradientShap
-```
-
-3. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.01
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.01 --attr_method_name GradientShap
-```
-
-4. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.1
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.1 --attr_method_name GradientShap
-```
-
-In the `experiments` folder, run the following scripts for the experiments that use the Integrated Gradients as a Feature Importance Method:
-1. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.001
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.001 --attr_method_name IntegratedGradients
-```
-
-2. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.005
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.005 --attr_method_name IntegratedGradients
-```
-
-3. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.01
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.01 --attr_method_name IntegratedGradients
-```
-
-4. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.1
-```shell
-python -m mnist --name disvae --n_runs 5 --reg_prior 0.1 --attr_method_name IntegratedGradients
-```
-
-
-
-
-
-
-where experiment_name can take the following values:
 
 | argument      | description                                                                  |
 |----------------------|------------------------------------------------------------------------------|
@@ -190,6 +147,16 @@ where experiment_name can take the following values:
 | reg_prior | The  regularization attribution prior parameter to use. Note that with that being 0 or None no attribution prior will be used|
 | load_models               | Whether to load models from files. The files must be given in the folders in which they were generated|
 | load_metrics               | Whether to load metrics from files. The files must be given in the folders in which they were generated|
+
+and reg_prior can take the following values:
+
+| reg_prior   | 
+|----------------------|
+|  0.001 | 
+| 0.005 | 
+| 0.01 |
+| 0.1 |
+
 
 The resulting plots and data are saved at the folder `results/mnist/vae`.
 
