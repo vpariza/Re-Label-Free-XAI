@@ -196,7 +196,7 @@ This code repository contains:
 
 3. Original Experiments Introduced by the authors:
     1. cifar10.py: Feature Importance, Example Importance
-    2. dsprites.py:
+    2. dsprites.py: Disentangled VAEs Assumptions
     3. ecg5000.py: Feature Importance, Example Importance
     4. mnist.py: Feature Importance, Example Importance, Disentangled VAEs Assumptions, learned Pretext Task Representations experiments
 
