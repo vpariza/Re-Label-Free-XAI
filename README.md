@@ -195,14 +195,13 @@ This code repository contains:
     3. Added a method attribute_auxiliary_single in features.py module of `explanations` folder that does the same thing as the method attribute_auxiliary but on a single batch of data.
 
 3. Original Experiments Introduced by the authors:
-    1. cifar10.py: 
+    1. cifar10.py: Feature Importance, Example Importance
     2. dsprites.py:
-    3. ecg5000.py:
+    3. ecg5000.py: Feature Importance, Example Importance
     4. mnist.py: Feature Importance, Example Importance, Disentangled VAEs Assumptions, learned Pretext Task Representations experiments
 
 4. Additional Experiments for reproducing the authors' work:
-    1. agnews.py:
-    2. mnist.py:
-        * Experiments on Disentangled VAEs with attribution priors
-    3. imagenet.py: 
-    4. cora.py:
+    1. agnews.py: Text explainability by example importance
+    2. mnist.py: Experiments on Disentangled VAEs with attribution priors
+    3. imagenet.py: Feature Importance, Example Importance
+    4. cora.py: Graph explainability by feature importance
