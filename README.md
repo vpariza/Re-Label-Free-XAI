@@ -91,6 +91,30 @@ The resulting plots and data are saved at `results/dsprites`.
 
 ## 3. Reproducing the additional experiments results
 
+### Tiny ImageNet Experiments
+In the `experiments` folder, run the following script
+```shell
+python -m imagenet --name experiment_name
+```
+where experiment_name can take the following values:
+
+| experiment_name      | description                                                                  |
+|----------------------|------------------------------------------------------------------------------|
+| consistency_features | Consistency check for label-free<br/> feature importance (authors' paper Section 4.1) |
+| consistency_examples | Consistency check for label-free<br/> example importance (authors' paper Section 4.1) |
+
+
+### CORA Experiment
+In the `experiments` folder, run the following script
+```shell
+python -m cora --name consistency_features
+```
+### AGNews Experiment
+In the `experiments` folder, run the following script
+```shell
+python -m agnews --name consistency_examples
+```
+
 ### MNIST Experiments
 #### Challenging the Generalizability of the authors' Assumptions on Disentangled VAEs
 In the `experiments` folder, run the following scripts for the experiments that use the Gradient Shap as a Feature Importance Method:
