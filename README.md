@@ -1,87 +1,33 @@
-# Label-Free XAI
-[![Tests](https://github.com/vanderschaarlab/Label-Free-XAI/actions/workflows/test.yml/badge.svg)](https://github.com/vanderschaarlab/Label-Free-XAI/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.png)](https://opensource.org/licenses/MIT)
-[![Documentation Status](https://readthedocs.org/projects/lfxai/badge/?version=latest)](https://lfxai.readthedocs.io/en/latest/?badge=latest)
+# Reproduccibility Study Label-Free XAI
 
-![image](https://github.com/vanderschaarlab/Label-Free-XAI/raw/main/docs/illustration.png "Label-Free Explainability")
+## Summary
+This repository includes code for implementations, experiments and supplementary studies used for reproducing the work and the experiments of the work [ICML 2022 paper](https://arxiv.org/abs/2203.01928): 'Label-Free Explainability for Unsupervised Models' by Jonathan Crabbé and Mihaela van der Schaar.
 
-Code Author: Jonathan Crabbé ([jc2133@cam.ac.uk](mailto:jc2133@cam.ac.uk))
 
-This repository contains the implementation of LFXAI, a framework to explain the latent
-representations of unsupervised black-box models with the help of usual feature importance and example-based methods.
-For more details, please read our [ICML 2022 paper](https://arxiv.org/abs/2203.01928): 'Label-Free Explainability for Unsupervised Models'.
 
 ## 1. Installation
-From PyPI
+Make sure that you installed python 3.8. Then, from bash:
+1. Create a python virtual environment with name env in the root folder of this repository:
 ```bash
-pip install lfxai
+python -m venv env
 ```
 
-From repository:
-1. Clone the repository
-2. Create a new virtual environment with Python 3.8
-3. Run the following command from the repository folder:
-
-```shell
-pip install .
+2. Activate the python virtual environment:
+```bash
+source ./env/bin/activate 
 ```
 
-When the packages are installed, you are ready to explain unsupervised models.
-
-## 2. Toy example
-
-Bellow, you can find a toy demonstration where we compute label-free feature and example importance
-with a MNIST autoencoder. The relevant code can be found in the folder
-[explanations](explanations).
-
-```python
-import torch
-from pathlib import Path
-from torchvision.datasets import MNIST
-from torch.utils.data import DataLoader, Subset
-from torchvision import transforms
-from torch.nn import MSELoss
-from captum.attr import IntegratedGradients
-
-from lfxai.models.images import AutoEncoderMnist, EncoderMnist, DecoderMnist
-from lfxai.models.pretext import Identity
-from lfxai.explanations.features import attribute_auxiliary
-from lfxai.explanations.examples import SimplEx
-
-# Select torch device
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-# Load data
-data_dir = Path.cwd() / "data/mnist"
-train_dataset = MNIST(data_dir, train=True, download=True)
-test_dataset = MNIST(data_dir, train=False, download=True)
-train_dataset.transform = transforms.Compose([transforms.ToTensor()])
-test_dataset.transform = transforms.Compose([transforms.ToTensor()])
-train_loader = DataLoader(train_dataset, batch_size=100)
-test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
-
-# Get a model
-encoder = EncoderMnist(encoded_space_dim=10)
-decoder = DecoderMnist(encoded_space_dim=10)
-model = AutoEncoderMnist(encoder, decoder, latent_dim=10, input_pert=Identity())
-model.to(device)
-
-# Get label-free feature importance
-baseline = torch.zeros((1, 1, 28, 28)).to(device) # black image as baseline
-attr_method = IntegratedGradients(model)
-feature_importance = attribute_auxiliary(encoder, test_loader,
-                                         device, attr_method, baseline)
-
-# Get label-free example importance
-train_subset = Subset(train_dataset, indices=list(range(500))) # Limit the number of training examples
-train_subloader = DataLoader(train_subset, batch_size=500)
-attr_method = SimplEx(model, loss_f=MSELoss())
-example_importance = attr_method.attribute_loader(device, train_subloader, test_loader)
+3. Upgrade pip:
+```bash
+pip install --upgrade pip
 ```
 
+4. Install libraries required to execute our code: 
+```bash
+pip install -r requirements.txt
+```
 
-
-## 3. Reproducing the paper results
+## 2. Reproducing the original paper results
 
 ### MNIST experiments
 In the `experiments` folder, run the following script
@@ -92,14 +38,14 @@ where experiment_name can take the following values:
 
 | experiment_name      | description                                                                  |
 |----------------------|------------------------------------------------------------------------------|
-| consistency_features | Consistency check for label-free<br/> feature importance (paper Section 4.1) |
-| consistency_examples | Consistency check for label-free<br/> example importance (paper Section 4.1) |
-| roar_test            | ROAR test for label-free<br/> feature importance (paper Appendix C)          |
-| pretext              | Pretext task sensitivity<br/> use case (paper Section 4.2)                   |
-| disvae               | Challenging assumptions with <br/> disentangled VAEs (paper Section 4.3)     |
+| consistency_features | Consistency check for label-free<br/> feature importance (authors' paper Section 4.1) |
+| consistency_examples | Consistency check for label-free<br/> example importance (authors' paper Section 4.1) |
+| roar_test            | ROAR test for label-free<br/> feature importance (authors' paper Appendix C)          |
+| pretext              | Pretext task sensitivity<br/> use case (authors' paper Section 4.2)                   |
+| disvae               | Challenging assumptions with <br/> disentangled VAEs (authors' paper Section 4.3)     |
 
 
-The resulting plots and data are saved [here](results/mnist).
+The resulting plots and data are saved at the folder `results/mnist`.
 
 ### ECG5000 experiments
 Run the following script
@@ -110,12 +56,10 @@ where experiment_name can take the following values:
 
 | experiment_name      | description                                                                  |
 |----------------------|------------------------------------------------------------------------------|
-| consistency_features | Consistency check for label-free<br/> feature importance (paper Section 4.1) |
-| consistency_examples | Consistency check for label-free<br/> example importance (paper Section 4.1) |
+| consistency_features | Consistency check for label-free<br/> feature importance (authors' paper Section 4.1) |
+| consistency_examples | Consistency check for label-free<br/> example importance (authors' paper Section 4.1) |
 
-
-
-The resulting plots and data are saved [here](results/ecg5000).
+The resulting plots and data are saved `results/ecg5000`.
 
 ### CIFAR10 experiments
 Run the following script
@@ -128,38 +72,113 @@ The parameter can take the following values:
 
 | experiment_name      | description                                                                  |
 |----------------------|------------------------------------------------------------------------------|
-| consistency_features | Consistency check for label-free<br/> feature importance (paper Section 4.1) |
-| consistency_examples | Consistency check for label-free<br/> example importance (paper Section 4.1) |
+| consistency_features | Consistency check for label-free<br/> feature importance (authors' paper Section 4.1) |
+| consistency_examples | Consistency check for label-free<br/> example importance (authors' paper Section 4.1) |
 
 
 
-The resulting plots and data are saved [here](results/cifar10).
+The resulting plots and data are saved at `results/cifar10`.
+
 ### dSprites experiment
 Run the following script
 ```shell
 python -m dsprites
 ```
 The experiment needs several hours to run since several VAEs are trained.
-The resulting plots and data are saved [here](results/dsprites).
-## 4. Citing
+The resulting plots and data are saved at `results/dsprites`.
 
-If you use this code, please cite the associated paper:
 
+
+## 3. Reproducing the additional experiments results
+
+### MNIST Experiments
+#### Challenging the Generalizability of the authors' Assumptions on Disentangled VAEs
+In the `experiments` folder, run the following scripts for the experiments that use the Gradient Shap as a Feature Importance Method:
+1. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.001
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.001 --attr_method_name GradientShap
 ```
 
-@InProceedings{pmlr-v162-crabbe22a,
-  title = 	 {Label-Free Explainability for Unsupervised Models},
-  author =       {Crabb{\'e}, Jonathan and van der Schaar, Mihaela},
-  booktitle = 	 {Proceedings of the 39th International Conference on Machine Learning},
-  pages = 	 {4391--4420},
-  year = 	 {2022},
-  editor = 	 {Chaudhuri, Kamalika and Jegelka, Stefanie and Song, Le and Szepesvari, Csaba and Niu, Gang and Sabato, Sivan},
-  volume = 	 {162},
-  series = 	 {Proceedings of Machine Learning Research},
-  month = 	 {17--23 Jul},
-  publisher =    {PMLR},
-  pdf = 	 {https://proceedings.mlr.press/v162/crabbe22a/crabbe22a.pdf},
-  url = 	 {https://proceedings.mlr.press/v162/crabbe22a.html},
-  abstract = 	 {Unsupervised black-box models are challenging to interpret. Indeed, most existing explainability methods require labels to select which component(s) of the black-box’s output to interpret. In the absence of labels, black-box outputs often are representation vectors whose components do not correspond to any meaningful quantity. Hence, choosing which component(s) to interpret in a label-free unsupervised/self-supervised setting is an important, yet unsolved problem. To bridge this gap in the literature, we introduce two crucial extensions of post-hoc explanation techniques: (1) label-free feature importance and (2) label-free example importance that respectively highlight influential features and training examples for a black-box to construct representations at inference time. We demonstrate that our extensions can be successfully implemented as simple wrappers around many existing feature and example importance methods. We illustrate the utility of our label-free explainability paradigm through a qualitative and quantitative comparison of representation spaces learned by various autoencoders trained on distinct unsupervised tasks.}
-}
+2. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.005
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.005 --attr_method_name GradientShap
 ```
+
+3. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.01
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.01 --attr_method_name GradientShap
+```
+
+4. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.1
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.1 --attr_method_name GradientShap
+```
+
+In the `experiments` folder, run the following scripts for the experiments that use the Integrated Gradients as a Feature Importance Method:
+1. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.001
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.001 --attr_method_name IntegratedGradients
+```
+
+2. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.005
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.005 --attr_method_name IntegratedGradients
+```
+
+3. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.01
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.01 --attr_method_name IntegratedGradients
+```
+
+4. For the experiments with disentangled VAEs that use pixel attribution prior with regularization parameter equal to 0.1
+```shell
+python -m mnist --name disvae --n_runs 5 --reg_prior 0.1 --attr_method_name IntegratedGradients
+```
+
+
+
+
+
+
+where experiment_name can take the following values:
+
+| argument      | description                                                                  |
+|----------------------|------------------------------------------------------------------------------|
+| name | The name of the experiment to execute. In our case is `disvae` |
+| n_runs | The number of runs for the experiment|
+| batch_size  | The batch size to use for running the experiments |
+| random_seed  | The random seed to use for the experiments |
+| attr_method_name | What type of attribution method to use for the experiment. The value of the argument can be either `GradientShap` or `IntegratedGradients`|
+| reg_prior | The  regularization attribution prior parameter to use. Note that with that being 0 or None no attribution prior will be used|
+| load_models               | Whether to load models from files. The files must be given in the folders in which they were generated|
+| load_metrics               | Whether to load metrics from files. The files must be given in the folders in which they were generated|
+
+The resulting plots and data are saved at the folder `results/mnist/vae`.
+
+
+
+## 4. Reproducing all the experiments results with a Jupyter notebook
+
+To execute all the experiments in a notebook either from scratch or by loading pretrained models and data generated already from our experiments, please use the jupyter notebook named `run_experiments.ipynb` in the `experiments` folder.
+
+## 4. Details of what the repository includes:
+This code repository contains:
+1. Implementation of LFXAI, a framework to explain the latent representations of unsupervised black-box `models` with the help of usual feature importance and example-based methods. It was introduced in the work of the authors of the Crabbé and van der Schaar.
+
+2. Extensions/Additions to the LFXAI library:
+    1. Added attr_priors.py file in `models` folder, that includes the total variation attribution prior penalty function
+    2. Updated the VAE class of the images.py module in `models` folder to include support for using attribution priors
+    3. Added a method attribute_auxiliary_single in features.py module of `explanations` folder that does the same thing as the method attribute_auxiliary but on a single batch of data.
+
+3. Original Experiments Introduced by the authors:
+    1. cifar10.py: 
+    2. dsprites.py:
+    3. ecg5000.py:
+    4. mnist.py: Feature Importance, Example Importance, Disentangled VAEs Assumptions, learned Pretext Task Representations experiments
+
+4. Additional Experiments for reproducing the authors' work:
+    1. agnews.py:
+    2. mnist.py:
+        * Experiments on Disentangled VAEs with attribution priors
+    3. imagenet.py: 
+    4. cora.py:
