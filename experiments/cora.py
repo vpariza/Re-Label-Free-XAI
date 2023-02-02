@@ -222,7 +222,7 @@ if __name__ == "__main__":
 
     if args.name == "consistency_features":
         consistency_feature_importance(
-            batch_size=args.batch_size, random_seed=args.random_seed
+            random_seed=args.random_seed
         )        
     else:
         raise ValueError("Invalid experiment name")
