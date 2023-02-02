@@ -11,10 +11,24 @@ Make sure that you installed python 3.8. Then, from bash:
 ```bash
 python -m venv env
 ```
+If you are using Conda, create virtual environment as follows:
+
+First update the Conda:
+```bash
+conda update conda --all
+```
+Create a new environment:
+```bash
+conda create --name env python=3.8
+```
 
 2. Activate the python virtual environment:
 ```bash
 source ./env/bin/activate 
+```
+If you are using Conda,
+```bash
+conda activate env
 ```
 
 3. Upgrade pip:
