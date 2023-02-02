@@ -79,7 +79,7 @@ def consistency_feature_importance(
     dim_latent: int = 4,
     n_epochs: int = 100,
     load_models: bool = True,
-    load_metrics: bool = True
+    load_metrics: bool = False,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
@@ -220,7 +220,7 @@ def consistency_examples(
     n_epochs: int = 100,
     subtrain_size: int = 1000,
     load_models: bool = True,
-    load_metrics: bool = True,
+    load_metrics: bool = False,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)

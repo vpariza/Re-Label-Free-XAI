@@ -45,7 +45,7 @@ def consistency_feature_importance(
     n_epochs: int = 150,
     val_proportion: float = 0.2,
     load_models: bool = True,
-    load_metrics: bool = True
+    load_metrics: bool = False,
 ) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -177,7 +177,7 @@ def consistency_example_importance(
     n_epochs: int = 150,
     subtrain_size: int = 200,
     load_models: bool = True,
-    load_metrics: bool = True,
+    load_metrics: bool = False,
     checkpoint_interval: int = 10,
 ) -> None:
     # Initialize seed and device

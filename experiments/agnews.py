@@ -162,7 +162,7 @@ def consistency_example_importance(
     checkpoint_interval: int = 1,
     use_saved_dataset: bool = False,
     load_models: bool = True,
-    load_metrics: bool = True,
+    load_metrics: bool = False,
 ) -> None:
     # Initialize seed and device
     torch.random.manual_seed(random_seed)
