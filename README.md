@@ -205,11 +205,6 @@ and reg_prior can take the following values:
 The resulting plots and data are saved at the folder `results/mnist/vae`.
 
 
-
-## 4. Reproducing all the experiments results with a Jupyter notebook
-
-To execute all the experiments in a notebook either from scratch or by loading pretrained models and data generated already from our experiments, please use the jupyter notebook named [`run_experiments.ipynb`](/experiments/run_experiments.ipynb)  in the `experiments` folder.
-
 ## 4. Details of what the repository includes:
 This code repository contains:
 1. Implementation of LFXAI, a framework to explain the latent representations of unsupervised black-box `models` with the help of usual feature importance and example-based methods. It was introduced in the work of the authors of the Crabbé and van der Schaar.
